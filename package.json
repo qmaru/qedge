@@ -1,0 +1,19 @@
+{
+  "name": "qedge",
+  "module": "index.ts",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "fmt": "oxfmt",
+    "build": "bun build index.ts --bytecode --target bun --production --outdir=dist"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "private": true,
+  "type": "module"
+}
