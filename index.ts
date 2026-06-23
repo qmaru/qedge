@@ -11,6 +11,10 @@ function mask(key: string) {
   return `${key.slice(0, 4)}...${key.slice(-4)}`
 }
 
+function routeKey(key: string) {
+  return Buffer.from(key).toString("base64url")
+}
+
 const routes = new Map<string, string>()
 
 for (const [k, v] of Object.entries(Bun.env)) {
@@ -21,7 +25,7 @@ for (const [k, v] of Object.entries(Bun.env)) {
 log(
   "routes",
   [...routes.entries()].map(([k, v]) => ({
-    key: mask(k),
+    key: k,
     upstream: v,
   })),
 )
@@ -42,9 +46,19 @@ const server = Bun.serve({
     }
 
     const key = auth.slice(7)
-    const upstream = routes.get(key)
+    const keyId = routeKey(key)
+    const upstream = routes.get(keyId)
 
-    log(req.method, req.url, "key=", mask(key), "upstream=", upstream ?? "<not-found>")
+    log(
+      req.method,
+      req.url,
+      "key=",
+      mask(key),
+      "keyId=",
+      keyId,
+      "upstream=",
+      upstream ?? "<not-found>",
+    )
 
     if (!upstream) {
       return new Response("unknown api key", {
