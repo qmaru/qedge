@@ -8,7 +8,7 @@ RUN upx --best --lzma /usr/local/bin/bun
 COPY bun.lock package.json tsconfig.json .
 RUN bun install --frozen-lockfile --production
 
-COPY index.ts .
+COPY src/ ./src
 RUN bun run build
 
 FROM scratch AS prod
@@ -26,4 +26,5 @@ COPY --from=base /usr/src/dist /app
 
 EXPOSE 3000/tcp
 
-ENTRYPOINT ["bun", "run", "index.js"]
+ENTRYPOINT ["bun", "run"]
+CMD ["index.js"]
