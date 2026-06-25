@@ -5,6 +5,8 @@ import { log } from "@/shared/utils"
 let server: ReturnType<typeof Bun.serve>
 
 export const startServer = () => {
+  log(`qedge gateway running on ${env.host}:${env.port}`)
+
   server = Bun.serve({
     hostname: env.host,
     port: env.port,
@@ -41,4 +43,5 @@ export const startServer = () => {
 
 export const stopServer = () => {
   server?.stop(true)
+  log("qedge gateway server stopped")
 }

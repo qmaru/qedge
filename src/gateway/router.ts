@@ -1,5 +1,5 @@
 import { routes } from "@/gateway/config"
-import { log } from "@/shared/utils"
+import { debugLog } from "@/shared/utils"
 
 function mask(key: string) {
   return key.length <= 8 ? key : key.slice(0, 4) + "..." + key.slice(-4)
@@ -16,7 +16,7 @@ export const resolve = (req: Request) => {
   const key = Buffer.from(token).toString("base64url")
   const upstream = routes.get(key)
 
-  log("request", {
+  debugLog("request", {
     url: req.url,
     token: mask(token),
     key,

@@ -10,7 +10,9 @@
     "lint": "oxlint",
     "fmt": "oxfmt",
     "dev:gw": "bun --watch src/gateway/index.ts",
-    "build:gw": "bun build src/gateway/index.ts --bytecode --target bun --production --outdir=dist"
+    "build:gw": "bun build src/gateway/index.ts --bytecode --target bun --production --outdir=dist",
+    "dev:mqtt": "bun --watch src/mqtt/index.ts",
+    "build:mqtt": "bun build src/mqtt/index.ts --bytecode --target bun --production --outdir=dist"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
