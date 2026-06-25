@@ -28,22 +28,24 @@ jobs:
 
       - name: Build matrix
         id: set-matrix
+        shell: bash
         run: |
-          targets="[]"
+          targets=()
 
           if [ "${{ steps.filter.outputs.gateway }}" = "true" ]; then
-            targets=$(echo $targets | jq '. + ["gateway"]')
+            targets+=("gateway")
           fi
 
           if [ "${{ steps.filter.outputs.mqtt }}" = "true" ]; then
-            targets=$(echo $targets | jq '. + ["mqtt"]')
+            targets+=("mqtt")
           fi
 
-          if [ "$targets" = "[]" ]; then
-            targets='["gateway","mqtt"]'
+          if [ ${#targets[@]} -eq 0 ]; then
+            targets=("gateway" "mqtt")
           fi
 
-          echo "matrix={\"target\":$targets}" >> $GITHUB_OUTPUT
+          matrix=$(printf '%s\n' "${targets[@]}" | jq -R . | jq -cs '{target: .}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build
