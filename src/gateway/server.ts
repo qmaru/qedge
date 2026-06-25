@@ -1,6 +1,6 @@
-import { env } from "@/config"
-import { resolve } from "@/router"
-import { log } from "@/utils"
+import { env } from "@/gateway/config"
+import { resolve } from "@/gateway/router"
+import { log } from "@/shared/utils"
 
 let server: ReturnType<typeof Bun.serve>
 

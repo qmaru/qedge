@@ -9,11 +9,15 @@
   "scripts": {
     "lint": "oxlint",
     "fmt": "oxfmt",
-    "build": "bun build src/index.ts --bytecode --target bun --production --outdir=dist"
+    "dev:gw": "bun --watch src/gateway/index.ts",
+    "build:gw": "bun build src/gateway/index.ts --bytecode --target bun --production --outdir=dist"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "mqtt": "^5.15.1"
+  }
 }

@@ -1,5 +1,5 @@
-import { routes } from "./config"
-import { log } from "./utils"
+import { routes } from "@/gateway/config"
+import { log } from "@/shared/utils"
 
 function mask(key: string) {
   return key.length <= 8 ? key : key.slice(0, 4) + "..." + key.slice(-4)
