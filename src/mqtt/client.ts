@@ -2,6 +2,8 @@ import mqtt from "mqtt"
 import { env } from "@/mqtt/config"
 import { log } from "@/shared/utils"
 
+import type { Qos } from "@/mqtt/config"
+
 let client = null as mqtt.MqttClient | null
 let readyPromise: Promise<mqtt.MqttClient> | null = null
 
@@ -17,30 +19,30 @@ const getClient = async () => {
   return readyPromise
 }
 
-export const publish = async (topic: string, data: any, qos: 0 | 1 | 2 = 0, retain: boolean = false) => {
+export const publish = async (topic: string, data: any, qos: Qos = 0, retain: boolean = false) => {
   const c = await getClient()
   const payload = typeof data === "string" ? data : JSON.stringify(data)
 
   c.publish(topic, payload, { qos, retain }, (err) => {
-    if (err) log(`publish error: ${err.message}`)
+    if (err) log("Publish", { error: err.message })
   })
 }
 
 export const startClient = () => {
   if (readyPromise) return readyPromise
 
-  const mqtt_server = `mqtt://${env.server_host}:${env.server_port}`
+  const mqttServer = `mqtt://${env.serverHost}:${env.serverPort}`
 
-  log(`qedge MQTT connected to ${mqtt_server}`)
+  log(`qedge MQTT connected to ${mqttServer}`)
 
-  const clientId = env.client_id
+  const clientId = env.clientId
 
-  client = mqtt.connect(mqtt_server, {
+  client = mqtt.connect(mqttServer, {
     username: env.username,
     password: env.password,
     clientId: clientId,
-    clean: env.clean_start,
-    ...(env.with_tls && { protocol: "mqtts" }),
+    clean: env.cleanStart,
+    ...(env.withTls && { protocol: "mqtts" }),
   })
 
   client.on("message", (topic, payload) => {
@@ -48,7 +50,7 @@ export const startClient = () => {
       try {
         handler(topic, payload)
       } catch (e) {
-        log(`message handler error: ${(e as Error).message}`)
+        log("onMessage", { error: (e as Error).message })
       }
     }
   })
@@ -57,7 +59,7 @@ export const startClient = () => {
     client!.once("connect", () => {
       const t = `${env.topic}/oc/${clientId}`
       client!.subscribe(t, { qos: env.qos })
-      log(`Subscribed to topic: ${t} with QoS: ${env.qos} `)
+      log("Subscribed", { topic: t, qos: env.qos })
       resolve(client!)
     })
 

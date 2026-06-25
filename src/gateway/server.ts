@@ -29,10 +29,10 @@ export const startServer = () => {
           duplex: "half",
         })
 
-        log("proxy", { url: req.url, target: target.href, status: resp.status })
+        log("Proxy", { url: req.url, target: target.href, status: resp.status })
         return resp
       } catch (e) {
-        log("error", { url: req.url, error: e })
+        log("Proxy", { url: req.url, error: e })
         return new Response("bad gateway", { status: 502 })
       }
     },
