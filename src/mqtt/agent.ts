@@ -32,7 +32,7 @@ const publishTopic = `${env.topic}/oc/result`
 const retain = env.retain
 const qos = env.qos
 
-export function initMessageHandler() {
+export const initMessageHandler = () => {
   onMessage(async (topic, payload) => {
     const rawMessage = payload.toString()
 

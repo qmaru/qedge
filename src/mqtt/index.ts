@@ -4,8 +4,12 @@ import { initMessageHandler } from "@/mqtt/agent"
 
 const shutdown = createShutdown()
 
-await startClient()
-initMessageHandler()
+const run = async () => {
+  await startClient()
+  initMessageHandler()
+}
+
+run()
 
 shutdown.register(() => stopClient())
 shutdown.listen()
