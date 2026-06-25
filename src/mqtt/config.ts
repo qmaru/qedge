@@ -11,4 +11,8 @@ export const env = {
   retain: (Bun.env.MQTT_RETAIN ?? "false") === "true",
   topic: Bun.env.MQTT_TOPIC ?? "ai/agent",
   qos: Number(Bun.env.MQTT_QOS ?? 2) as Qos,
+  start_cmd: Bun.env.MQTT_START_CMD ?? "",
+  start_args: Bun.env.MQTT_START_ARGS ?? "",
+  stop_cmd: Bun.env.MQTT_STOP_CMD ?? "",
+  stop_args: Bun.env.MQTT_STOP_ARGS ?? "",
 }

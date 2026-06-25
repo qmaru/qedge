@@ -1,5 +1,5 @@
 import { onMessage, publish } from "@/mqtt/client"
-import { debugLog } from "@/shared/utils"
+import { debugLog, spawn } from "@/shared/utils"
 import { env } from "@/mqtt/config"
 
 type taskType = "start" | "cancel"
@@ -18,14 +18,18 @@ interface Response {
   timestamp?: number
 }
 
-const runAgent = (prompt: string): Promise<string> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log("your prompt:", prompt)
-      console.log("Agent finished")
-      resolve(`[echo] ${prompt}`)
-    }, 5000)
-  })
+const runAgent = async (rid: string, prompt: string): Promise<string> => {
+  if (!rid || !prompt) return "no prompt provided"
+  debugLog("running", "request_id", rid, "prompt:", prompt)
+  const args = env.start_args.split(" ")
+  args.push(rid, prompt)
+  debugLog("running", "start_cmd", env.start_cmd)
+  debugLog("running", "start_args", env.start_args)
+  const proc = spawn(env.start_cmd, args)
+  const output = await new Response(proc.stdout).text()
+  await proc.exited
+
+  return output
 }
 
 const publishTopic = `${env.topic}/oc/result`
@@ -41,15 +45,17 @@ export const initMessageHandler = () => {
 
     try {
       const request: Request = JSON.parse(rawMessage)
+      const requestId = request.id
 
       if (request.type !== "start") {
         debugLog("Received", "type", "cancel a task")
         return
       }
 
-      const result = await runAgent(request.prompt)
+      const result = await runAgent(requestId, request.prompt)
+      debugLog("Processed", "result:", result)
       const response: Response = {
-        id: request.id,
+        id: requestId,
         client_id: env.client_id,
         result: result,
         timestamp: Date.now(),

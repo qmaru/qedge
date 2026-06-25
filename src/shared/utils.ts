@@ -21,7 +21,7 @@ export const debugLog = (...args: any[]) => {
   console.log(time(), ...args)
 }
 
-export function createShutdown() {
+export const createShutdown = () => {
   const cleanups: CleanupFn[] = []
   let shuttingDown = false
   let listening = false
@@ -47,4 +47,11 @@ export function createShutdown() {
   }
 
   return { register, shutdown, listen }
+}
+
+export const spawn = (cmd: string, args: string[]) => {
+  return Bun.spawn([cmd, ...args], {
+    stdout: "inherit",
+    stderr: "inherit",
+  })
 }
