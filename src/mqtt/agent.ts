@@ -95,8 +95,8 @@ export const initMessageHandler = () => {
       debugLog("Processed", { requestId, response })
       const text = JSON.stringify(response)
       await publish(publishTopic, text, qos, retain)
-    } catch (error) {
-      console.error("message handler error:", error)
+    } catch (e) {
+      console.error("message handler error:", (e as Error).message)
     }
   })
 }
