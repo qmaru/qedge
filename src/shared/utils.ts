@@ -12,13 +12,15 @@ export const decodeFromBase64 = (key: string) => {
 
 const time = () => new Date().toLocaleString("sv-SE").replace("T", " ")
 
-export const log = (...args: any[]) => {
-  console.log(time(), ...args)
+type LogArgs = Record<string, unknown>
+
+export const log = (message: string, args?: LogArgs) => {
+  console.log(time(), message, args ?? "")
 }
 
-export const debugLog = (...args: any[]) => {
+export const debugLog = (message: string, args?: LogArgs) => {
   if (!baseEnv.debug) return
-  console.log(time(), ...args)
+  console.log(time(), message, args ?? "")
 }
 
 export const createShutdown = () => {
@@ -32,7 +34,7 @@ export const createShutdown = () => {
     if (shuttingDown) return
     shuttingDown = true
 
-    log(`[shutdown] ${signal}`)
+    log(`qedge shutdown on ${signal}`)
 
     await Promise.allSettled(cleanups.map((fn) => fn()))
     process.exit(0)

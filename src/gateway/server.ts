@@ -5,7 +5,7 @@ import { log } from "@/shared/utils"
 let server: ReturnType<typeof Bun.serve>
 
 export const startServer = () => {
-  log(`qedge gateway running on ${env.host}:${env.port}`)
+  log(`qedge gateway running on http://${env.host}:${env.port}`)
 
   server = Bun.serve({
     hostname: env.host,
@@ -29,10 +29,10 @@ export const startServer = () => {
           duplex: "half",
         })
 
-        log("proxy", req.url, "->", target.href, resp.status)
+        log("proxy", { url: req.url, target: target.href, status: resp.status })
         return resp
       } catch (e) {
-        log("error", req.url, e)
+        log("error", { url: req.url, error: e })
         return new Response("bad gateway", { status: 502 })
       }
     },
