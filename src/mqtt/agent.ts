@@ -8,6 +8,7 @@ interface Request {
   request_id: string
   type: TaskType
   prompt: string
+  model?: string
   source_id?: string
   source_name?: string
 }
@@ -58,6 +59,8 @@ const toResponse = (requestId: string, ok: boolean, result: string): Response =>
 }
 
 const runProcess = async (cmd: string, args: string[]): Promise<ProcessResult> => {
+  const fullCmd = [cmd, ...args].join(" ")
+  debugLog("Running process", { fullCmd })
   const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" })
 
   const [stdout, stderr, code] = await Promise.all([
@@ -86,18 +89,25 @@ const stopAgent = async (requestId: string) => {
   return "task was cancelled"
 }
 
-const startAgent = async (requestId: string, prompt: string) => {
+const startAgent = async (requestId: string, prompt: string, model: string) => {
   if (!requestId || !prompt) {
-    debugLog("Start invalid request", { requestId, prompt })
+    debugLog("Start invalid request", { requestId, prompt, model })
     return "invalid request"
   }
 
-  debugLog("Running", { requestId, prompt, startCmd: env.startCmd, startArgs: env.startArgs })
+  debugLog("Running", {
+    requestId,
+    prompt,
+    model,
+    startCmd: env.startCmd,
+    startArgs: env.startArgs,
+  })
 
   const res = await runProcess(env.startCmd, [
     ...env.startArgs.split(" "),
     taskPrefix + requestId,
     prompt,
+    model,
   ])
 
   if (cancelled.has(requestId)) {
@@ -115,7 +125,7 @@ const startAgent = async (requestId: string, prompt: string) => {
 }
 
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
-  start: (req) => startAgent(req.request_id, req.prompt),
+  start: (req) => startAgent(req.request_id, req.prompt, req.model ?? ""),
   cancel: (req) => stopAgent(req.request_id).then(() => "task was cancelled"),
 }
 
