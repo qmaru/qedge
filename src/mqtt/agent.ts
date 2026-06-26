@@ -8,15 +8,21 @@ interface Request {
   request_id: string
   type: TaskType
   prompt: string
-  timestamp?: number
+  source_id?: string
+  source_name?: string
+}
+
+interface ResponseCallback {
+  region: string
+  source_id?: string
+  source_name?: string
 }
 
 interface Response {
   request_id: string
-  client_id: string
   ok: boolean
   result: string
-  timestamp?: number
+  callback: ResponseCallback
   toJson: () => string
 }
 
@@ -42,10 +48,11 @@ const cancelled = new Set<string>()
 const toResponse = (requestId: string, ok: boolean, result: string): Response => {
   return {
     request_id: requestId,
-    client_id: clientId,
     ok,
     result,
-    timestamp: Date.now(),
+    callback: {
+      region: clientId,
+    },
     toJson,
   }
 }
@@ -156,6 +163,9 @@ export const initMessageHandler = () => {
         debugLog("drop cancelled result", { request_id })
         return
       }
+
+      response.callback.source_id = request.source_id
+      response.callback.source_name = request.source_name
 
       await publish(publishTopic, response.toJson(), qos, retain)
     } catch (e) {
