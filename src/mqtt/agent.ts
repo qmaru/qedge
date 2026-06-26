@@ -1,5 +1,5 @@
 import { onMessage, publish } from "@/mqtt/client"
-import { debugLog, spawn } from "@/shared/utils"
+import { debugLog } from "@/shared/utils"
 import { env } from "@/mqtt/config"
 
 type TaskType = "start" | "cancel"
@@ -14,89 +14,157 @@ interface Request {
 interface Response {
   id: string
   clientId: string
+  ok: boolean
   result: string
   timestamp?: number
+  toJson: () => string
 }
 
+type ProcessResult = {
+  ok: boolean
+  stdout: string
+  stderr: string
+  code: number | null
+}
+
+const taskPrefix = "agent-task-"
 const publishTopic = `${env.topic}/oc/result`
-const retain = env.retain
-const qos = env.qos
+const { qos, retain, clientId } = env
 
-const isTaskType = (type: string): type is TaskType => {
-  return type === "start" || type === "cancel"
+const isTaskType = (type: string): type is TaskType => type === "start" || type === "cancel"
+
+const toJson = function (this: Omit<Response, "toJson">) {
+  return JSON.stringify(this)
 }
 
-const stopAgent = async (requestId: string): Promise<string> => {
-  if (!requestId) return "no request id provided"
+const cancelled = new Set<string>()
 
-  const args = env.stopArgs.split(" ")
-  args.push(requestId)
-
-  debugLog("Stopping", { requestId, stopCmd: env.stopCmd })
-  debugLog("Stopping", { requestId, stopArgs: env.stopArgs })
-
-  const proc = spawn(env.stopCmd, args)
-  const output = await new Response(proc.stdout).text()
-  await proc.exited
-
-  return output
+const toResponse = (id: string, ok: boolean, result: string): Response => {
+  return {
+    id,
+    clientId,
+    ok,
+    result,
+    timestamp: Date.now(),
+    toJson,
+  }
 }
 
-const startAgent = async (requestId: string, prompt: string): Promise<string> => {
-  if (!requestId || !prompt) return "no prompt provided"
-  const args = env.startArgs.split(" ")
-  args.push(requestId, prompt)
+const runProcess = async (cmd: string, args: string[]): Promise<ProcessResult> => {
+  const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" })
 
-  debugLog("Running", { requestId, startCmd: env.startCmd })
-  debugLog("Running", { requestId, startArgs: env.startArgs })
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ])
 
-  const proc = spawn(env.startCmd, args)
-  const output = await new Response(proc.stdout).text()
-  await proc.exited
+  return { stdout, stderr, code, ok: code === 0 }
+}
 
-  return output
+const stopAgent = async (requestId: string) => {
+  if (!requestId) return Promise.resolve("no request id provided")
+
+  debugLog("Stopping", { requestId, stopCmd: env.stopCmd, stopArgs: env.stopArgs })
+  cancelled.add(requestId)
+
+  const res = await runProcess(env.stopCmd, [...env.stopArgs.split(" "), taskPrefix + requestId])
+
+  if (!res.ok) {
+    const msg = `stop failed: ${res.stderr || res.stdout || `code=${res.code}`}`
+    debugLog("Stop failed", { requestId, msg, res })
+    return msg
+  }
+
+  return "task was cancelled"
+}
+
+const startAgent = async (requestId: string, prompt: string) => {
+  if (!requestId || !prompt) {
+    debugLog("Start invalid request", { requestId, prompt })
+    return "invalid request"
+  }
+
+  debugLog("Running", { requestId, prompt, startCmd: env.startCmd, startArgs: env.startArgs })
+
+  const res = await runProcess(env.startCmd, [
+    ...env.startArgs.split(" "),
+    taskPrefix + requestId,
+    prompt,
+  ])
+
+  if (cancelled.has(requestId)) {
+    debugLog("drop cancelled start result", { requestId, res })
+    return "[cancelled]"
+  }
+
+  if (!res.ok) {
+    const msg = `start failed: ${res.stderr || res.stdout || `code=${res.code}`}`
+    debugLog("Start failed", { requestId, msg, res })
+    return msg
+  }
+
+  return res.stdout || "ok"
+}
+
+const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
+  start: (req) => startAgent(req.id, req.prompt),
+  cancel: (req) => stopAgent(req.id).then(() => "task was cancelled"),
 }
 
 export const initMessageHandler = () => {
   onMessage(async (topic, payload) => {
-    const rawMessage = payload.toString()
+    const raw = payload.toString()
 
-    debugLog("Received", { rawMessage, topic })
+    debugLog("Received", { raw, topic })
+
+    let request: Request
 
     try {
-      const request: Request = JSON.parse(rawMessage)
-      const requestId = request.id
+      request = JSON.parse(raw)
+    } catch {
+      const response = toResponse("", false, "invalid payload")
+      debugLog("Parse failed", { raw })
+      await publish(publishTopic, response.toJson(), qos, retain)
+      return
+    }
 
-      debugLog("Received", { requestId, type: request.type })
+    const { id, type } = request
 
-      if (!requestId) {
-        debugLog("Received", { requestId, error: "no request id provided" })
+    if (!id) {
+      const response = toResponse("", false, "no request id provided")
+      debugLog("Missing id", { request })
+      await publish(publishTopic, response.toJson(), qos, retain)
+      return
+    }
+
+    if (!isTaskType(type)) {
+      const response = toResponse(id, false, "unknown task type")
+      debugLog("Unknown type", { id, type })
+      await publish(publishTopic, response.toJson(), qos, retain)
+      return
+    }
+
+    try {
+      const result = await handlers[type](request)
+      const response = toResponse(id, true, result)
+
+      debugLog("Processed", { id, result })
+      debugLog("Processed", { id, type, response })
+
+      if (type === "start" && cancelled.has(id) && result === "[cancelled]") {
+        debugLog("drop cancelled result", { id })
         return
       }
 
-      if (!isTaskType(request.type)) {
-        debugLog("Received", { requestId, error: "unknown task type" })
-        return
-      }
-
-      if (request.type === "cancel") {
-        await stopAgent(requestId)
-        return
-      }
-
-      const result = await startAgent(requestId, request.prompt)
-      const response: Response = {
-        id: requestId,
-        clientId: env.clientId,
-        result: result,
-        timestamp: Date.now(),
-      }
-
-      debugLog("Processed", { requestId, response })
-      const text = JSON.stringify(response)
-      await publish(publishTopic, text, qos, retain)
+      await publish(publishTopic, response.toJson(), qos, retain)
     } catch (e) {
-      console.error("message handler error:", (e as Error).message)
+      const err = e as Error
+
+      debugLog("Process crashed", { message: err.message, stack: err.stack })
+
+      const res = toResponse(id, false, err.message)
+      await publish(publishTopic, JSON.stringify(res), qos, retain)
     }
   })
 }

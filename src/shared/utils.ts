@@ -50,10 +50,3 @@ export const createShutdown = () => {
 
   return { register, shutdown, listen }
 }
-
-export const spawn = (cmd: string, args: string[]) => {
-  return Bun.spawn([cmd, ...args], {
-    stdout: "inherit",
-    stderr: "inherit",
-  })
-}
