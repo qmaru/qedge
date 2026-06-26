@@ -5,14 +5,14 @@ import { env } from "@/mqtt/config"
 type TaskType = "start" | "cancel"
 
 interface Request {
-  id: string
+  request_id: string
   type: TaskType
   prompt: string
   timestamp?: number
 }
 
 interface Response {
-  id: string
+  request_id: string
   clientId: string
   ok: boolean
   result: string
@@ -39,9 +39,9 @@ const toJson = function (this: Omit<Response, "toJson">) {
 
 const cancelled = new Set<string>()
 
-const toResponse = (id: string, ok: boolean, result: string): Response => {
+const toResponse = (request_id: string, ok: boolean, result: string): Response => {
   return {
-    id,
+    request_id,
     clientId,
     ok,
     result,
@@ -108,8 +108,8 @@ const startAgent = async (requestId: string, prompt: string) => {
 }
 
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
-  start: (req) => startAgent(req.id, req.prompt),
-  cancel: (req) => stopAgent(req.id).then(() => "task was cancelled"),
+  start: (req) => startAgent(req.request_id, req.prompt),
+  cancel: (req) => stopAgent(req.request_id).then(() => "task was cancelled"),
 }
 
 export const initMessageHandler = () => {
@@ -129,9 +129,9 @@ export const initMessageHandler = () => {
       return
     }
 
-    const { id, type } = request
+    const { request_id, type } = request
 
-    if (!id) {
+    if (!request_id) {
       const response = toResponse("", false, "no request id provided")
       debugLog("Missing id", { request })
       await publish(publishTopic, response.toJson(), qos, retain)
@@ -139,21 +139,21 @@ export const initMessageHandler = () => {
     }
 
     if (!isTaskType(type)) {
-      const response = toResponse(id, false, "unknown task type")
-      debugLog("Unknown type", { id, type })
+      const response = toResponse(request_id, false, "unknown task type")
+      debugLog("Unknown type", { request_id, type })
       await publish(publishTopic, response.toJson(), qos, retain)
       return
     }
 
     try {
       const result = await handlers[type](request)
-      const response = toResponse(id, true, result)
+      const response = toResponse(request_id, true, result)
 
-      debugLog("Processed", { id, result })
-      debugLog("Processed", { id, type, response })
+      debugLog("Processed", { request_id, result })
+      debugLog("Processed", { request_id, type, response })
 
-      if (type === "start" && cancelled.has(id) && result === "[cancelled]") {
-        debugLog("drop cancelled result", { id })
+      if (type === "start" && cancelled.has(request_id) && result === "[cancelled]") {
+        debugLog("drop cancelled result", { request_id })
         return
       }
 
@@ -163,7 +163,7 @@ export const initMessageHandler = () => {
 
       debugLog("Process crashed", { message: err.message, stack: err.stack })
 
-      const res = toResponse(id, false, err.message)
+      const res = toResponse(request_id, false, err.message)
       await publish(publishTopic, JSON.stringify(res), qos, retain)
     }
   })
