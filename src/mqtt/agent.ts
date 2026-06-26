@@ -13,7 +13,7 @@ interface Request {
 
 interface Response {
   request_id: string
-  clientId: string
+  client_id: string
   ok: boolean
   result: string
   timestamp?: number
@@ -39,10 +39,10 @@ const toJson = function (this: Omit<Response, "toJson">) {
 
 const cancelled = new Set<string>()
 
-const toResponse = (request_id: string, ok: boolean, result: string): Response => {
+const toResponse = (requestId: string, ok: boolean, result: string): Response => {
   return {
-    request_id,
-    clientId,
+    request_id: requestId,
+    client_id: clientId,
     ok,
     result,
     timestamp: Date.now(),
