@@ -88,7 +88,7 @@ const stopAgent = async (requestId: string) => {
     return msg
   }
 
-  return "task was cancelled"
+  return `${env.clientId} has been stopped successfully. (${requestId})`
 }
 
 const startAgent = async (requestId: string, prompt: string, model: string) => {
@@ -133,7 +133,7 @@ const errAgent = async (requestId: string) => {
 
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
   start: (req) => startAgent(req.request_id, req.prompt, req.model ?? ""),
-  cancel: (req) => stopAgent(req.request_id).then(() => "task was cancelled"),
+  cancel: (req) => stopAgent(req.request_id),
   error: (req) => errAgent(req.request_id),
 }
 
