@@ -166,6 +166,9 @@ export const initMessageHandler = () => {
       const result = await handlers[type](request)
       const response = toResponse(request_id, true, result)
 
+      response.callback.source_id = request.source_id
+      response.callback.source_name = request.source_name
+
       debugLog("Processed", { request_id, result })
       debugLog("Processed", { request_id, type, response })
 
@@ -173,9 +176,6 @@ export const initMessageHandler = () => {
         debugLog("drop cancelled result", { request_id })
         return
       }
-
-      response.callback.source_id = request.source_id
-      response.callback.source_name = request.source_name
 
       await publish(publishTopic, response.toJson(), qos, retain)
     } catch (e) {
