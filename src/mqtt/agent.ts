@@ -2,7 +2,7 @@ import { onMessage, publish } from "@/mqtt/client"
 import { debugLog } from "@/shared/utils"
 import { env } from "@/mqtt/config"
 
-type TaskType = "start" | "cancel"
+type TaskType = "start" | "cancel" | "error"
 
 interface Request {
   request_id: string
@@ -20,6 +20,7 @@ interface ResponseCallback {
 }
 
 interface Response {
+  type: TaskType
   request_id: string
   ok: boolean
   result: string
@@ -46,9 +47,10 @@ const toJson = function (this: Omit<Response, "toJson">) {
 
 const cancelled = new Set<string>()
 
-const toResponse = (requestId: string, ok: boolean, result: string): Response => {
+const toResponse = (requestId: string, type: TaskType, ok: boolean, result: string): Response => {
   return {
     request_id: requestId,
+    type,
     ok,
     result,
     callback: {
@@ -124,9 +126,15 @@ const startAgent = async (requestId: string, prompt: string, model: string) => {
   return res.stdout || "ok"
 }
 
+const errAgent = async (requestId: string) => {
+  debugLog("Error task received", { requestId })
+  return "error task received"
+}
+
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
   start: (req) => startAgent(req.request_id, req.prompt, req.model ?? ""),
   cancel: (req) => stopAgent(req.request_id).then(() => "task was cancelled"),
+  error: (req) => errAgent(req.request_id),
 }
 
 export const initMessageHandler = () => {
@@ -140,7 +148,7 @@ export const initMessageHandler = () => {
     try {
       request = JSON.parse(raw)
     } catch {
-      const response = toResponse("", false, "invalid payload")
+      const response = toResponse("", "error", false, "invalid payload")
       debugLog("Parse failed", { raw })
       await publish(publishTopic, response.toJson(), qos, retain)
       return
@@ -149,14 +157,14 @@ export const initMessageHandler = () => {
     const { request_id, type } = request
 
     if (!request_id) {
-      const response = toResponse("", false, "no request id provided")
+      const response = toResponse("", type, false, "no request id provided")
       debugLog("Missing id", { request })
       await publish(publishTopic, response.toJson(), qos, retain)
       return
     }
 
     if (!isTaskType(type)) {
-      const response = toResponse(request_id, false, "unknown task type")
+      const response = toResponse(request_id, type, false, "unknown task type")
       debugLog("Unknown type", { request_id, type })
       await publish(publishTopic, response.toJson(), qos, retain)
       return
@@ -164,7 +172,7 @@ export const initMessageHandler = () => {
 
     try {
       const result = await handlers[type](request)
-      const response = toResponse(request_id, true, result)
+      const response = toResponse(request_id, type, true, result)
 
       response.callback.source_id = request.source_id
       response.callback.source_name = request.source_name
@@ -183,7 +191,7 @@ export const initMessageHandler = () => {
 
       debugLog("Process crashed", { message: err.message, stack: err.stack })
 
-      const res = toResponse(request_id, false, err.message)
+      const res = toResponse(request_id, type, false, err.message)
       await publish(publishTopic, JSON.stringify(res), qos, retain)
     }
   })
