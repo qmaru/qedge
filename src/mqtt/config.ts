@@ -16,4 +16,6 @@ export const env = {
   agentStopCmd: Bun.env.MQTT_AGENT_STOP_CMD ?? "",
   agentStopArgs: Bun.env.MQTT_AGENT_STOP_ARGS ?? "",
   agentEndpoint: Bun.env.MQTT_AGENT_ENDPOINT ?? "",
+  agentUsername: Bun.env.MQTT_AGENT_USERNAME ?? "",
+  agentPassword: Bun.env.MQTT_AGENT_PASSWORD ?? "",
 }

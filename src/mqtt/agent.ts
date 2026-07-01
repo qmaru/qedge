@@ -38,13 +38,13 @@ interface Response {
 const publishTopic = `${env.topic}/oc/result`
 const { qos, retain, clientId } = env
 
-const cancelled = new Set<string>()
-
 let runner: AgentRunner
 if (env.agentEndpoint === "") {
   runner = new CommandRunner(new CommandBackend(), new Set<string>())
+  console.log("Using CommandRunner")
 } else {
-  runner = new APIRunner()
+  runner = new APIRunner(new Map())
+  console.log("Using APIRunner", { endpoint: env.agentEndpoint })
 }
 
 const toJson = function (this: Omit<Response, "toJson">) {
@@ -118,7 +118,7 @@ export const initMessageHandler = () => {
       debugLog("Processed", { request_id, result })
       debugLog("Processed", { request_id, type, response })
 
-      if (type === "start" && cancelled.has(request_id) && result === "[cancelled]") {
+      if (type === "start" && result === "[cancelled]") {
         debugLog("drop cancelled result", { request_id })
         return
       }

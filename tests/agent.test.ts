@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { env } from "@/mqtt/config"
 
 import { CommandBackend } from "@/mqtt/utils"
-import { CommandRunner } from "@/mqtt/runner"
+import { CommandRunner, APIRunner } from "@/mqtt/runner"
 
 const eventParser = (text: string) => {
   return text
@@ -79,6 +79,26 @@ describe("CommandRunner", () => {
 
       expect(stopResult).toContain("stopped")
       expect(startResult).toBe("[cancelled]")
+    },
+    1000 * 600,
+  )
+})
+
+describe("APIRunner", () => {
+  const test_id = `test-${Date.now()}`
+  const test_prompt = "my skills"
+
+  const sessionCache = new Map()
+  const runner = new APIRunner(sessionCache)
+
+  console.log("request_id:", test_id)
+
+  test(
+    "start a agent",
+    async () => {
+      const result = await runner.start(test_id, test_prompt, "")
+      expect(result).toBeString()
+      console.log(result)
     },
     1000 * 600,
   )
