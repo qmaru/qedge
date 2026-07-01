@@ -25,7 +25,7 @@ const createRunResult = (result: Omit<RunResult, "toText">): RunResult => ({
   },
 })
 
-export class CommandRun implements RunBackend {
+export class CommandBackend implements RunBackend {
   spawn(cmd: string, args: string[]) {
     return Bun.spawn([cmd, ...args], {
       stdout: "pipe",
@@ -37,7 +37,7 @@ export class CommandRun implements RunBackend {
     const fullCmd = [cmd, ...args].join(" ")
     debugLog("Running process", { fullCmd })
 
-    const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" })
+    const proc = this.spawn(cmd, args)
 
     const [stdout, stderr, code] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -53,10 +53,9 @@ export class CommandRun implements RunBackend {
   }
 }
 
-export class APIRun implements RunBackend {
+export class APIBackend implements RunBackend {
   async run(endpoint: string, payload: RunPayload): Promise<RunResult> {
-    const fullCmd = [endpoint, JSON.stringify(payload)].join(" ")
-    debugLog("Running API request", { fullCmd })
+    debugLog("Running API request", { endpoint, payload })
 
     const response = await fetch(endpoint, {
       method: "POST",

@@ -1,11 +1,15 @@
 import { onMessage, publish } from "@/mqtt/client"
 import { env } from "@/mqtt/config"
-import { CommandRun } from "@/mqtt/utils"
 import { debugLog } from "@/shared/utils"
 
-import type { RunBackend } from "@/mqtt/utils"
+import { CommandBackend } from "@/mqtt/utils"
+import { CommandRunner, APIRunner } from "@/mqtt/runner"
+
+import type { AgentRunner } from "@/mqtt/runner"
 
 type TaskType = "start" | "cancel" | "error"
+
+const isTaskType = (type: string): type is TaskType => type === "start" || type === "cancel"
 
 interface Request {
   request_id: string
@@ -31,19 +35,21 @@ interface Response {
   toJson: () => string
 }
 
-const taskPrefix = "agent-task-"
 const publishTopic = `${env.topic}/oc/result`
 const { qos, retain, clientId } = env
 
-const runner: RunBackend = new CommandRun()
+const cancelled = new Set<string>()
 
-const isTaskType = (type: string): type is TaskType => type === "start" || type === "cancel"
+let runner: AgentRunner
+if (env.agentEndpoint === "") {
+  runner = new CommandRunner(new CommandBackend(), new Set<string>())
+} else {
+  runner = new APIRunner()
+}
 
 const toJson = function (this: Omit<Response, "toJson">) {
   return JSON.stringify(this)
 }
-
-const cancelled = new Set<string>()
 
 const toResponse = (requestId: string, type: TaskType, ok: boolean, result: string): Response => {
   return {
@@ -58,60 +64,14 @@ const toResponse = (requestId: string, type: TaskType, ok: boolean, result: stri
   }
 }
 
-const stopAgent = async (requestId: string) => {
-  if (!requestId) return Promise.resolve("no request id provided")
-
-  debugLog("Stopping", { requestId, stopCmd: env.agentStopCmd, stopArgs: env.agentStopArgs })
-  cancelled.add(requestId)
-
-  const res = await runner.run(env.agentStopCmd, [...env.agentStopArgs.split(" "), taskPrefix + requestId])
-
-  if (!res.ok) {
-    const msg = `stop failed: ${res.toText()}`
-    debugLog("Stop failed", { requestId, msg, res })
-    return msg
-  }
-
-  return `${env.clientId} has been stopped successfully. (${requestId})`
-}
-
-const startAgent = async (requestId: string, prompt: string, model: string) => {
-  if (!requestId || !prompt) {
-    debugLog("Start invalid request", { requestId, prompt, model })
-    return "invalid request"
-  }
-
-  debugLog("Running", {
-    requestId,
-    prompt,
-    model,
-    startCmd: env.agentStartCmd,
-    startArgs: env.agentStartArgs,
-  })
-
-  const res = await runner.run(env.agentStartCmd, [
-    ...env.agentStartArgs.split(" "),
-    taskPrefix + requestId,
-    prompt,
-    model,
-  ])
-
-  if (cancelled.has(requestId)) {
-    debugLog("drop cancelled start result", { requestId, res })
-    return "[cancelled]"
-  }
-
-  return res.toText()
-}
-
 const errAgent = async (requestId: string) => {
   debugLog("Error task received", { requestId })
   return "error task received"
 }
 
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
-  start: (req) => startAgent(req.request_id, req.prompt, req.model ?? ""),
-  cancel: (req) => stopAgent(req.request_id),
+  start: (req) => runner.start(req.request_id, req.prompt, req.model ?? ""),
+  cancel: (req) => runner.stop(req.request_id),
   error: (req) => errAgent(req.request_id),
 }
 
