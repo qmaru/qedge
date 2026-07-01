@@ -11,12 +11,12 @@ describe("CommandRun", () => {
   test(
     "start a agent",
     async () => {
-      expect(env.startCmd).toBeTruthy()
+      expect(env.agentStartCmd).toBeTruthy()
 
-      const args = [...env.startArgs.trim().split(/\s+/), test_id, test_prompt]
+      const args = [...env.agentStartArgs.trim().split(/\s+/), test_id, test_prompt]
 
       const runner = new CommandRun()
-      const result = await runner.run(env.startCmd, args)
+      const result = await runner.run(env.agentStartCmd, args)
 
       expect(result.ok).toBeBoolean()
       expect(result.stdout).toBeString()
@@ -43,12 +43,12 @@ describe("CommandRun", () => {
     async () => {
       const runner = new CommandRun()
 
-      runner.spawn(env.startCmd, [...env.startArgs.trim().split(/\s+/), test_id, test_prompt])
+      runner.spawn(env.agentStartCmd, [...env.agentStartArgs.trim().split(/\s+/), test_id, test_prompt])
       console.log("start finished")
       await Bun.sleep(5_000)
 
-      const stopArgs = [...env.stopArgs.trim().split(/\s+/), test_id]
-      const result = await runner.run(env.stopCmd, stopArgs)
+      const stopArgs = [...env.agentStopArgs.trim().split(/\s+/), test_id]
+      const result = await runner.run(env.agentStopCmd, stopArgs)
 
       expect(result.ok).toBeBoolean()
       expect(result.stdout).toBeString()

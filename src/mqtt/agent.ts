@@ -61,10 +61,10 @@ const toResponse = (requestId: string, type: TaskType, ok: boolean, result: stri
 const stopAgent = async (requestId: string) => {
   if (!requestId) return Promise.resolve("no request id provided")
 
-  debugLog("Stopping", { requestId, stopCmd: env.stopCmd, stopArgs: env.stopArgs })
+  debugLog("Stopping", { requestId, stopCmd: env.agentStopCmd, stopArgs: env.agentStopArgs })
   cancelled.add(requestId)
 
-  const res = await runner.run(env.stopCmd, [...env.stopArgs.split(" "), taskPrefix + requestId])
+  const res = await runner.run(env.agentStopCmd, [...env.agentStopArgs.split(" "), taskPrefix + requestId])
 
   if (!res.ok) {
     const msg = `stop failed: ${res.toText()}`
@@ -85,12 +85,12 @@ const startAgent = async (requestId: string, prompt: string, model: string) => {
     requestId,
     prompt,
     model,
-    startCmd: env.startCmd,
-    startArgs: env.startArgs,
+    startCmd: env.agentStartCmd,
+    startArgs: env.agentStartArgs,
   })
 
-  const res = await runner.run(env.startCmd, [
-    ...env.startArgs.split(" "),
+  const res = await runner.run(env.agentStartCmd, [
+    ...env.agentStartArgs.split(" "),
     taskPrefix + requestId,
     prompt,
     model,
