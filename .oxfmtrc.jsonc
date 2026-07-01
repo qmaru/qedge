@@ -1,28 +1,28 @@
 {
-    // 每行的大致最大长度
+    // Approximate maximum line length
     "printWidth": 100,
-    // 缩进用几个空格
+    // Number of spaces per indentation level
     "tabWidth": 2,
-    // 缩进时是用空格（false）还是 tab（true）
+    // Use spaces instead of tabs for indentation (false) or tabs (true)
     "useTabs": false,
-    // 语句末尾是否添加分号
+    // Whether to add semicolons at the end of statements
     "semi": false,
-    // 字符串使用单引号（true）还是双引号（false）
+    // Use single quotes (true) or double quotes (false) for strings
     "singleQuote": false,
-    // 对象属性名只有在必须时才加引号
+    // Quote object property names only when necessary
     "quoteProps": "as-needed",
-    // 对象字面量中的 { 和 } 之间是否加空格
+    // Add spaces inside object literal braces { and }
     "bracketSpacing": true,
-    // 多行 HTML / JSX / Vue 标签中，把 > 放在最后一行末尾，而不是另起一行
+    // For multi-line HTML / JSX / Vue tags, place > at the end of the last line instead of on a new line
     "bracketSameLine": false,
-    // 箭头函数参数始终加括号 (x) => x 而不是 x => x
+    // Always add parentheses to arrow function parameters (x) => x instead of x => x
     "arrowParens": "always",
-    // 在多行结构（如数组 / 对象 / 参数列表等）中尽可能加尾逗号
+    // Add trailing commas where possible in multi-line structures (arrays, objects, parameter lists, etc.)
     "trailingComma": "all",
-    // 对 Markdown 等 prose（散文格式）内容是否自动换行
+    // Whether to wrap prose content such as Markdown
     "proseWrap": "preserve",
-    // 是否格式化嵌入语言（例如模板字符串里的 HTML / CSS / JS）
+    // Whether to format embedded languages (for example, HTML / CSS / JS inside template strings)
     "embeddedLanguageFormatting": "auto",
-    // 行尾统一使用 LF
+    // Use LF for line endings
     "endOfLine": "lf"
 }
