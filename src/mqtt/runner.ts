@@ -16,11 +16,9 @@ export interface AgentRunner {
 }
 
 export class CommandRunner implements AgentRunner {
-  constructor(
-    private readonly backend: CommandBackend,
-    private readonly cancelled: Set<string>,
-  ) {}
+  constructor(private readonly backend: CommandBackend) {}
 
+  private readonly cancelled = new Set<string>()
   private readonly startArgs = CommandRunner.parseArgs(env.agentStartArgs)
   private readonly stopArgs = CommandRunner.parseArgs(env.agentStopArgs)
 
@@ -81,9 +79,14 @@ export class CommandRunner implements AgentRunner {
 }
 
 export class APIRunner implements AgentRunner {
-  constructor(private readonly sessionCache: Map<string, string>) {}
+  private sessionCache = new Map<string, string>()
+  private readonly cancelled = new Set<string>()
+  private readonly controllers = new Map<string, AbortController>()
 
-  private oc = new Opencode(env.agentEndpoint, env.agentUsername, env.agentPassword)
+  private oc = new Opencode(env.agentEndpoint, {
+    username: env.agentUsername,
+    password: env.agentPassword,
+  })
 
   private eventParser = (resp: any) => {
     if (!resp || !resp.parts || !Array.isArray(resp.parts)) {
@@ -101,14 +104,24 @@ export class APIRunner implements AgentRunner {
   }
 
   async start(requestId: string, prompt: string, model: string): Promise<string> {
+    const tid = taskId(requestId)
     let sessionId: string | undefined
+    let aborted = false
+
+    this.cancelled.delete(tid)
+
+    const controller = new AbortController()
+    this.controllers.set(tid, controller)
 
     try {
       debugLog("Create a session", { requestId })
 
-      const tid = taskId(requestId)
+      const createResp = await this.oc.createSession(tid, { signal: controller.signal })
+      if (this.cancelled.has(tid)) {
+        aborted = true
+        return "[cancelled]"
+      }
 
-      const createResp = await this.oc.sessionCreate(tid)
       if (!createResp.ok) {
         debugLog("Create session failed", { createResp })
         return `create session failed: ${createResp.status} ${createResp.statusText}`
@@ -116,16 +129,19 @@ export class APIRunner implements AgentRunner {
 
       const createData = (await createResp.json()) as { id: string }
       sessionId = createData.id
-      // Store the session ID in the cache for later use when stopping the session
       this.sessionCache.set(tid, sessionId)
 
       debugLog("Send a sync message", { requestId, prompt, model })
 
-      const messageResp = await this.oc.messageSend(
-        sessionId,
-        { parts: [{ type: "text", text: prompt }] },
-        model,
-      )
+      const messageResp = await this.oc.sendMessage(sessionId, [{ type: "text", text: prompt }], {
+        signal: controller.signal,
+        model: model,
+      })
+      if (this.cancelled.has(tid)) {
+        aborted = true
+        return "[cancelled]"
+      }
+
       if (!messageResp.ok) {
         debugLog("Send message failed", { messageResp })
         return `send message failed: ${messageResp.status} ${messageResp.statusText}`
@@ -133,16 +149,23 @@ export class APIRunner implements AgentRunner {
 
       return this.eventParser(await messageResp.json())
     } catch (error) {
+      const err = error as Error
+      if (this.cancelled.has(tid) || err.name === "AbortError") {
+        aborted = true
+        return "[cancelled]"
+      }
+
       if (sessionId) {
-        await this.oc.sessionDelete(sessionId)
+        await this.oc.deleteSession(sessionId).catch(() => undefined)
       }
       debugLog("Error occurred", { requestId, error })
       return `error: ${error}`
     } finally {
-      // Clean up the session cache after processing
-      this.sessionCache.delete(taskId(requestId))
-      if (sessionId) {
-        await this.oc.sessionDelete(sessionId)
+      this.controllers.delete(tid)
+      this.sessionCache.delete(tid)
+
+      if (sessionId && !aborted) {
+        await this.oc.deleteSession(sessionId).catch(() => undefined)
       }
     }
   }
@@ -150,17 +173,25 @@ export class APIRunner implements AgentRunner {
   async stop(requestId: string): Promise<string> {
     if (!requestId) return "no request id provided"
 
+    const tid = taskId(requestId)
     debugLog("Stopping", { requestId })
 
-    const sid = this.sessionCache.get(taskId(requestId))
+    this.cancelled.add(tid)
+
+    const controller = this.controllers.get(tid)
+    controller?.abort()
+
+    const sid = this.sessionCache.get(tid)
     if (!sid) {
       debugLog("No session found for request", { requestId })
-      return "no session found for request"
+      return `${env.clientId} has been stopped successfully. (Request ID: ${requestId})`
     }
 
-    const resp = await this.oc.sessionDelete(sid)
-    if (!resp.ok) {
-      const body = (await resp.json().catch(() => null)) as { data?: { message?: string } } | null
+    this.sessionCache.delete(tid)
+
+    const resp = await this.oc.deleteSession(sid).catch(() => null)
+    if (!resp?.ok) {
+      const body = (await resp?.json().catch(() => null)) as { data?: { message?: string } } | null
       debugLog("Stop failed", { requestId, body })
       return body?.data?.message ?? "stop failed"
     }

@@ -1,102 +1,108 @@
-export interface MessageTextPart {
+export interface TextPart {
   type: "text"
   text: string
 }
 
-export interface Message {
-  parts: MessageTextPart[]
+export interface SendMessageOptions {
+  model?: string
+  signal?: AbortSignal
+}
+
+export interface RequestOptions {
+  signal?: AbortSignal
 }
 
 export class Opencode {
   constructor(
-    private readonly endpoint: string,
-    private readonly username?: string,
-    private readonly password?: string,
+    readonly endpoint: string,
+    readonly auth?: { username: string; password: string },
   ) {}
 
-  private authHeader() {
-    if (!this.username || !this.password) return undefined
-    const token = Buffer.from(`${this.username}:${this.password}`).toString("base64")
-    return `Basic ${token}`
-  }
-
-  private headers = {
-    "Content-Type": "application/json",
-    ...(this.authHeader() ? { Authorization: this.authHeader() } : {}),
-  }
-
-  private getModel(model: string) {
-    const parts = model.split("/")
-
-    if (parts.length !== 2) {
-      throw new Error(`Invalid model: ${model}`)
+  private get headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
     }
 
-    const [providerID, modelID] = parts
+    if (this.auth) {
+      headers.Authorization =
+        "Basic " + Buffer.from(`${this.auth.username}:${this.auth.password}`).toString("base64")
+    }
 
-    if (!providerID || !modelID) {
+    return headers
+  }
+
+  private async request(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(new URL(path, this.endpoint), {
+      ...init,
+      headers: {
+        ...this.headers,
+        ...init.headers,
+      },
+    })
+  }
+
+  private parseModel(model: string) {
+    const [providerID, modelID, ...rest] = model.split("/")
+
+    if (!providerID || !modelID || rest.length > 0) {
       throw new Error(`Invalid model: ${model}`)
     }
 
     return { providerID, modelID }
   }
 
-  async sessionCreate(title?: string) {
-    return await fetch(`${this.endpoint}/session`, {
+  createSession(title?: string, options?: RequestOptions) {
+    return this.request("/session", {
       method: "POST",
-      headers: this.headers,
       body: title ? JSON.stringify({ title }) : undefined,
+      signal: options?.signal,
     })
   }
 
-  async sessionGet(sid?: string) {
-    const url = sid
-      ? `${this.endpoint}/session/${encodeURIComponent(sid)}`
-      : `${this.endpoint}/session`
+  getSession(sessionId?: string, options?: RequestOptions) {
+    const path = sessionId ? `/session/${encodeURIComponent(sessionId)}` : "/session"
 
-    return fetch(url, {
-      method: "GET",
-      headers: this.headers,
+    return this.request(path, {
+      signal: options?.signal,
     })
   }
 
-  async sessionStatus() {
-    return await fetch(`${this.endpoint}/session/status`, {
-      method: "GET",
-      headers: this.headers,
+  getSessionStatus(options?: RequestOptions) {
+    return this.request("/session/status", {
+      signal: options?.signal,
     })
   }
 
-  async sessionAbort(sid: string) {
-    return await fetch(`${this.endpoint}/session/${sid}/abort`, {
+  abortSession(sessionId: string, options?: RequestOptions) {
+    return this.request(`/session/${encodeURIComponent(sessionId)}/abort`, {
       method: "POST",
-      headers: this.headers,
+      signal: options?.signal,
     })
   }
 
-  async sessionDelete(sid: string) {
-    return await fetch(`${this.endpoint}/session/${sid}`, {
+  deleteSession(sessionId: string, options?: RequestOptions) {
+    return this.request(`/session/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
-      headers: this.headers,
+      signal: options?.signal,
     })
   }
 
-  async messageSend(sid: string, message: Message, model: string = "") {
+  sendMessage(sessionId: string, parts: TextPart[], options?: SendMessageOptions) {
     const body = {
-      parts: message.parts,
-      ...(model ? this.getModel(model) : {}),
+      parts,
+      ...(options?.model ? this.parseModel(options.model) : {}),
     }
-    return await fetch(`${this.endpoint}/session/${sid}/message`, {
+
+    return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
       method: "POST",
-      headers: this.headers,
       body: JSON.stringify(body),
+      signal: options?.signal,
     })
   }
 
-  async messageGet(sid: string) {
-    return await fetch(`${this.endpoint}/session/${sid}/message`, {
-      method: "GET",
-      headers: this.headers,
+  getMessages(sessionId: string, options?: RequestOptions) {
+    return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
+      signal: options?.signal,
     })
   }
 }

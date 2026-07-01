@@ -40,10 +40,10 @@ const { qos, retain, clientId } = env
 
 let runner: AgentRunner
 if (env.agentEndpoint === "") {
-  runner = new CommandRunner(new CommandBackend(), new Set<string>())
+  runner = new CommandRunner(new CommandBackend())
   console.log("Using CommandRunner")
 } else {
-  runner = new APIRunner(new Map())
+  runner = new APIRunner()
   console.log("Using APIRunner", { endpoint: env.agentEndpoint })
 }
 

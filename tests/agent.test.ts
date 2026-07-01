@@ -46,8 +46,7 @@ describe("CommandRunner", () => {
   const test_id = `test-${Date.now()}`
   const test_prompt = "my skills"
 
-  const cancelled = new Set<string>()
-  const runner = new CommandRunner(new CommandBackend(), cancelled)
+  const runner = new CommandRunner(new CommandBackend())
 
   console.log("request_id:", test_id)
 
@@ -88,8 +87,7 @@ describe("APIRunner", () => {
   const test_id = `test-${Date.now()}`
   const test_prompt = "my skills"
 
-  const sessionCache = new Map()
-  const runner = new APIRunner(sessionCache)
+  const runner = new APIRunner()
 
   console.log("request_id:", test_id)
 
