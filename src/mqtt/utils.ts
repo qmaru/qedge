@@ -1,4 +1,5 @@
 import { debugLog } from "@/shared/utils"
+import { env } from "@/mqtt/config"
 
 export interface RunResult {
   ok: boolean
@@ -31,6 +32,7 @@ export class CommandBackend implements RunBackend {
     const proc = Bun.spawn([cmd, ...args], {
       stdout: "pipe",
       stderr: "pipe",
+      signal: AbortSignal.timeout(env.agentTimeout * 1000),
     })
 
     const [stdout, stderr, code] = await Promise.all([

@@ -88,6 +88,8 @@ export class APIRunner implements AgentRunner {
     password: env.agentPassword,
   })
 
+  private timeout = env.agentTimeout * 1000
+
   private eventParser = (resp: any) => {
     if (!resp || !resp.parts || !Array.isArray(resp.parts)) {
       debugLog("Invalid response format", { resp })
@@ -135,6 +137,7 @@ export class APIRunner implements AgentRunner {
 
       const messageResp = await this.oc.sendMessage(sessionId, [{ type: "text", text: prompt }], {
         signal: controller.signal,
+        timeout: this.timeout,
         model: model,
       })
       if (this.cancelled.has(tid)) {

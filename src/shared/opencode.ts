@@ -3,13 +3,13 @@ export interface TextPart {
   text: string
 }
 
-export interface SendMessageOptions {
-  model?: string
+export interface RequestOptions {
+  timeout?: number
   signal?: AbortSignal
 }
 
-export interface RequestOptions {
-  signal?: AbortSignal
+export interface SendMessageOptions extends RequestOptions {
+  model?: string
 }
 
 export class Opencode {
@@ -31,9 +31,18 @@ export class Opencode {
     return headers
   }
 
-  private async request(path: string, init: RequestInit = {}): Promise<Response> {
+  private async request(
+    path: string,
+    init: RequestInit & { timeout?: number } = {},
+  ): Promise<Response> {
+    const { timeout, signal, ...rest } = init
+
     return fetch(new URL(path, this.endpoint), {
-      ...init,
+      ...rest,
+      signal:
+        timeout != null
+          ? AbortSignal.any([AbortSignal.timeout(timeout), ...(signal ? [signal] : [])])
+          : signal,
       headers: {
         ...this.headers,
         ...init.headers,
@@ -56,6 +65,7 @@ export class Opencode {
       method: "POST",
       body: title ? JSON.stringify({ title }) : undefined,
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 
@@ -64,12 +74,14 @@ export class Opencode {
 
     return this.request(path, {
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 
   getSessionStatus(options?: RequestOptions) {
     return this.request("/session/status", {
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 
@@ -77,6 +89,7 @@ export class Opencode {
     return this.request(`/session/${encodeURIComponent(sessionId)}/abort`, {
       method: "POST",
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 
@@ -84,6 +97,7 @@ export class Opencode {
     return this.request(`/session/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 
@@ -97,12 +111,14 @@ export class Opencode {
       method: "POST",
       body: JSON.stringify(body),
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 
   getMessages(sessionId: string, options?: RequestOptions) {
     return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
       signal: options?.signal,
+      timeout: options?.timeout,
     })
   }
 }
