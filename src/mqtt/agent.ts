@@ -1,6 +1,9 @@
 import { onMessage, publish } from "@/mqtt/client"
-import { debugLog } from "@/shared/utils"
 import { env } from "@/mqtt/config"
+import { CommandRun } from "@/mqtt/utils"
+import { debugLog } from "@/shared/utils"
+
+import type { RunBackend } from "@/mqtt/utils"
 
 type TaskType = "start" | "cancel" | "error"
 
@@ -28,16 +31,11 @@ interface Response {
   toJson: () => string
 }
 
-type ProcessResult = {
-  ok: boolean
-  stdout: string
-  stderr: string
-  code: number | null
-}
-
 const taskPrefix = "agent-task-"
 const publishTopic = `${env.topic}/oc/result`
 const { qos, retain, clientId } = env
+
+const runner: RunBackend = new CommandRun()
 
 const isTaskType = (type: string): type is TaskType => type === "start" || type === "cancel"
 
@@ -60,30 +58,16 @@ const toResponse = (requestId: string, type: TaskType, ok: boolean, result: stri
   }
 }
 
-const runProcess = async (cmd: string, args: string[]): Promise<ProcessResult> => {
-  const fullCmd = [cmd, ...args].join(" ")
-  debugLog("Running process", { fullCmd })
-  const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" })
-
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-
-  return { stdout, stderr, code, ok: code === 0 }
-}
-
 const stopAgent = async (requestId: string) => {
   if (!requestId) return Promise.resolve("no request id provided")
 
   debugLog("Stopping", { requestId, stopCmd: env.stopCmd, stopArgs: env.stopArgs })
   cancelled.add(requestId)
 
-  const res = await runProcess(env.stopCmd, [...env.stopArgs.split(" "), taskPrefix + requestId])
+  const res = await runner.run(env.stopCmd, [...env.stopArgs.split(" "), taskPrefix + requestId])
 
   if (!res.ok) {
-    const msg = `stop failed: ${res.stderr || res.stdout || `code=${res.code}`}`
+    const msg = `stop failed: ${res.toText()}`
     debugLog("Stop failed", { requestId, msg, res })
     return msg
   }
@@ -105,7 +89,7 @@ const startAgent = async (requestId: string, prompt: string, model: string) => {
     startArgs: env.startArgs,
   })
 
-  const res = await runProcess(env.startCmd, [
+  const res = await runner.run(env.startCmd, [
     ...env.startArgs.split(" "),
     taskPrefix + requestId,
     prompt,
@@ -117,13 +101,7 @@ const startAgent = async (requestId: string, prompt: string, model: string) => {
     return "[cancelled]"
   }
 
-  if (!res.ok) {
-    const msg = `start failed: ${res.stderr || res.stdout || `code=${res.code}`}`
-    debugLog("Start failed", { requestId, msg, res })
-    return msg
-  }
-
-  return res.stdout || "ok"
+  return res.toText()
 }
 
 const errAgent = async (requestId: string) => {
