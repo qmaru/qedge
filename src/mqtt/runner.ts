@@ -10,6 +10,12 @@ const taskId = (requestId: string): string => {
   return taskPrefix + requestId
 }
 
+interface ParsedEvent {
+  text: string
+  modelID?: string
+  providerID?: string
+}
+
 export interface AgentRunner {
   start(requestId: string, prompt: string, model?: string): Promise<string>
   stop(requestId: string): Promise<string>
@@ -90,19 +96,23 @@ export class APIRunner implements AgentRunner {
 
   private timeout = env.agentTimeout * 1000
 
-  private eventParser = (resp: any) => {
-    if (!resp || !resp.parts || !Array.isArray(resp.parts)) {
+  private eventParser = (resp: any): ParsedEvent => {
+    if (!resp || !Array.isArray(resp.parts)) {
       debugLog("Invalid response format", { resp })
-      return "invalid response format"
+      return { text: "invalid response format" }
     }
 
-    return resp.parts
-      .filter(
-        (part: any): part is { type: "text"; text: string } =>
-          part.type === "text" && typeof part.text === "string",
-      )
-      .map((part: any) => part.text)
-      .join("\n")
+    return {
+      text: resp.parts
+        .filter(
+          (part: any): part is { type: "text"; text: string } =>
+            part.type === "text" && typeof part.text === "string",
+        )
+        .map((part: any) => part.text)
+        .join("\n"),
+      modelID: resp.info?.modelID,
+      providerID: resp.info?.providerID,
+    }
   }
 
   async start(requestId: string, prompt: string, model: string): Promise<string> {
@@ -150,7 +160,9 @@ export class APIRunner implements AgentRunner {
         return `send message failed: ${messageResp.status} ${messageResp.statusText}`
       }
 
-      return this.eventParser(await messageResp.json())
+      const resp = await messageResp.json()
+      const { text, modelID, providerID } = this.eventParser(resp)
+      return modelID && providerID ? `${text}\n\n[\`${modelID}/${providerID}\`]` : text
     } catch (error) {
       const err = error as Error
       if (this.cancelled.has(tid) || err.name === "AbortError") {
