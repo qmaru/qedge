@@ -3,8 +3,8 @@
   "module": "index.ts",
   "devDependencies": {
     "@types/bun": "latest",
-    "oxfmt": "^0.56.0",
-    "oxlint": "^1.71.0"
+    "oxfmt": "^0.57.0",
+    "oxlint": "^1.72.0"
   },
   "scripts": {
     "lint": "oxlint",
