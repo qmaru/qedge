@@ -102,17 +102,30 @@ export class APIRunner implements AgentRunner {
       return { text: "invalid response format" }
     }
 
-    return {
-      text: resp.parts
-        .filter(
-          (part: any): part is { type: "text"; text: string } =>
-            part.type === "text" && typeof part.text === "string",
-        )
-        .map((part: any) => part.text)
-        .join("\n"),
-      modelID: resp.info?.modelID,
-      providerID: resp.info?.providerID,
+    const text = resp.parts
+      .filter((part: any) => part?.type === "text" && typeof part?.text === "string")
+      .map((part: any) => part.text)
+      .join("\n")
+
+    if (text) {
+      return {
+        text,
+        modelID: resp.info?.modelID,
+        providerID: resp.info?.providerID,
+      }
     }
+
+    const errorText = resp.info?.error?.message || resp.info?.error?.data?.message
+    if (errorText) {
+      return {
+        text: errorText,
+        modelID: resp.info?.modelID,
+        providerID: resp.info?.providerID,
+      }
+    }
+
+    debugLog("Invalid response format", { resp })
+    return { text: "invalid response format" }
   }
 
   async start(requestId: string, prompt: string, model: string): Promise<string> {
@@ -161,6 +174,8 @@ export class APIRunner implements AgentRunner {
       }
 
       const resp = await messageResp.json()
+      debugLog("Send message succeeded", { resp })
+
       const { text, modelID, providerID } = this.eventParser(resp)
       return modelID && providerID ? `${text}\n\n[\`${providerID}/${modelID}\`]` : text
     } catch (error) {
