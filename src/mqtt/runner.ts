@@ -162,7 +162,7 @@ export class APIRunner implements AgentRunner {
 
       const resp = await messageResp.json()
       const { text, modelID, providerID } = this.eventParser(resp)
-      return modelID && providerID ? `${text}\n\n[\`${modelID}/${providerID}\`]` : text
+      return modelID && providerID ? `${text}\n\n[\`${providerID}/${modelID}\`]` : text
     } catch (error) {
       const err = error as Error
       if (this.cancelled.has(tid) || err.name === "AbortError") {
