@@ -139,7 +139,7 @@ export class Opencode {
   sendMessage(sessionId: string, parts: MessagePart[], options?: SendMessageOptions) {
     const body = {
       parts,
-      ...(options?.model ? this.parseModel(options.model) : {}),
+      ...(options?.model ? { model: this.parseModel(options.model) } : {}),
     }
 
     return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
