@@ -3,6 +3,15 @@ export interface TextPart {
   text: string
 }
 
+export interface FilePart {
+  type: "file"
+  mime: string
+  filename?: string
+  url: string
+}
+
+export type MessagePart = TextPart | FilePart
+
 export interface RequestOptions {
   timeout?: number
   signal?: AbortSignal
@@ -60,6 +69,32 @@ export class Opencode {
     return { providerID, modelID }
   }
 
+  buildMessageParts(prompt: string, image?: string): MessagePart[] {
+    if (image === "" || image === undefined) {
+      return [{ type: "text", text: prompt }]
+    }
+
+    if (prompt.trim() === "") {
+      prompt = "Please describe the image."
+    }
+
+    const mime = image.slice(5, image.indexOf(";base64,"))
+    if (!mime.startsWith("image/")) {
+      throw new Error("Invalid image data URL")
+    }
+
+    const parts: MessagePart[] = [
+      { type: "text", text: prompt },
+      {
+        type: "file",
+        mime,
+        url: image,
+      },
+    ]
+
+    return parts
+  }
+
   createSession(title?: string, options?: RequestOptions) {
     return this.request("/session", {
       method: "POST",
@@ -101,7 +136,7 @@ export class Opencode {
     })
   }
 
-  sendMessage(sessionId: string, parts: TextPart[], options?: SendMessageOptions) {
+  sendMessage(sessionId: string, parts: MessagePart[], options?: SendMessageOptions) {
     const body = {
       parts,
       ...(options?.model ? this.parseModel(options.model) : {}),

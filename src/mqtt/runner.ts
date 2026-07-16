@@ -17,7 +17,7 @@ interface ParsedEvent {
 }
 
 export interface AgentRunner {
-  start(requestId: string, prompt: string, model?: string): Promise<string>
+  start(requestId: string, prompt: string, model?: string, image?: string): Promise<string>
   stop(requestId: string): Promise<string>
 }
 
@@ -33,10 +33,19 @@ export class CommandRunner implements AgentRunner {
     return trimmed ? trimmed.split(/\s+/) : []
   }
 
-  async start(requestId: string, prompt: string, model: string = ""): Promise<string> {
+  async start(
+    requestId: string,
+    prompt: string,
+    model: string = "",
+    image: string = "",
+  ): Promise<string> {
     if (!requestId || !prompt) {
       debugLog("Start invalid request", { requestId, prompt, model })
       return "invalid request"
+    }
+
+    if (image !== "") {
+      return "image input is not supported in CommandRunner"
     }
 
     debugLog("Running", {
@@ -128,7 +137,12 @@ export class APIRunner implements AgentRunner {
     return { text: "invalid response format" }
   }
 
-  async start(requestId: string, prompt: string, model: string): Promise<string> {
+  async start(
+    requestId: string,
+    prompt: string,
+    model: string,
+    image: string = "",
+  ): Promise<string> {
     const tid = taskId(requestId)
     let sessionId: string | undefined
     let aborted = false
@@ -156,9 +170,11 @@ export class APIRunner implements AgentRunner {
       sessionId = createData.id
       this.sessionCache.set(tid, sessionId)
 
-      debugLog("Send a sync message", { requestId, prompt, model })
+      debugLog("Send a sync message", { requestId, prompt, model, image: image.slice(0, 30) })
 
-      const messageResp = await this.oc.sendMessage(sessionId, [{ type: "text", text: prompt }], {
+      const messages = this.oc.buildMessageParts(prompt, image)
+
+      const messageResp = await this.oc.sendMessage(sessionId, messages, {
         signal: controller.signal,
         timeout: this.timeout,
         model: model,

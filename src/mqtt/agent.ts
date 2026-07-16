@@ -15,6 +15,7 @@ interface Request {
   request_id: string
   type: TaskType
   prompt: string
+  image: string
   model?: string
   source_id?: string
   source_name?: string
@@ -70,7 +71,7 @@ const errAgent = async (requestId: string) => {
 }
 
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
-  start: (req) => runner.start(req.request_id, req.prompt, req.model ?? ""),
+  start: (req) => runner.start(req.request_id, req.prompt, req.model ?? "", req.image ?? ""),
   cancel: (req) => runner.stop(req.request_id),
   error: (req) => errAgent(req.request_id),
 }
