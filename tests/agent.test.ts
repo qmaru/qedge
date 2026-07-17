@@ -53,7 +53,7 @@ describe("CommandRunner", () => {
   test(
     "start a agent",
     async () => {
-      const result = await runner.start(test_id, test_prompt, "")
+      const result = await runner.start(test_id, { prompt: test_prompt })
       expect(result).toBeString()
 
       const events = eventParser(result)
@@ -69,7 +69,7 @@ describe("CommandRunner", () => {
   test(
     "stop a agent",
     async () => {
-      const startPromise = runner.start(test_id, test_prompt, "")
+      const startPromise = runner.start(test_id, { prompt: test_prompt })
 
       await Bun.sleep(3000)
 
@@ -94,7 +94,7 @@ describe("APIRunner", () => {
   test(
     "start a agent",
     async () => {
-      const result = await runner.start(test_id, test_prompt, "")
+      const result = await runner.start(test_id, { prompt: test_prompt })
       expect(result).toBeString()
       console.log(result)
     },

@@ -1,3 +1,5 @@
+import { debugLog } from "@/shared/utils"
+
 export interface TextPart {
   type: "text"
   text: string
@@ -19,6 +21,7 @@ export interface RequestOptions {
 
 export interface SendMessageOptions extends RequestOptions {
   model?: string
+  agent?: string
 }
 
 export class Opencode {
@@ -69,30 +72,29 @@ export class Opencode {
     return { providerID, modelID }
   }
 
-  buildMessageParts(prompt: string, image?: string): MessagePart[] {
-    if (image === "" || image === undefined) {
+  buildMessageParts(prompt: string, file?: { mime: string; url: string }): MessagePart[] {
+    if (!file) {
       return [{ type: "text", text: prompt }]
     }
 
-    if (prompt.trim() === "") {
-      prompt = "Please describe the image."
+    if (file.mime.startsWith("image/")) {
+      return [
+        { type: "text", text: prompt.trim() || "Please describe the image." },
+        {
+          type: "file",
+          mime: file.mime,
+          url: file.url,
+        },
+      ]
     }
 
-    const mime = image.slice(5, image.indexOf(";base64,"))
-    if (!mime.startsWith("image/")) {
-      throw new Error("Invalid image data URL")
-    }
-
-    const parts: MessagePart[] = [
-      { type: "text", text: prompt },
+    return [
       {
         type: "file",
-        mime,
-        url: image,
+        mime: file.mime,
+        url: file.url,
       },
     ]
-
-    return parts
   }
 
   createSession(title?: string, options?: RequestOptions) {
@@ -139,8 +141,21 @@ export class Opencode {
   sendMessage(sessionId: string, parts: MessagePart[], options?: SendMessageOptions) {
     const body = {
       parts,
-      ...(options?.model ? { model: this.parseModel(options.model) } : {}),
+      ...(options?.model && { model: this.parseModel(options.model) }),
+      ...(options?.agent && { agent: options.agent }),
     }
+
+    debugLog("Send body", {
+      sessionId,
+      messages: parts.map((msg) =>
+        msg.type === "file"
+          ? {
+              ...msg,
+              url: msg.url.length > 30 ? msg.url.slice(0, 30) + "..." : msg.url,
+            }
+          : msg,
+      ),
+    })
 
     return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
       method: "POST",

@@ -5,7 +5,7 @@ import { debugLog } from "@/shared/utils"
 import { CommandBackend } from "@/mqtt/utils"
 import { CommandRunner, APIRunner } from "@/mqtt/runner"
 
-import type { AgentRunner } from "@/mqtt/runner"
+import type { AgentRunner, AgentInput } from "@/mqtt/runner"
 
 type TaskType = "start" | "cancel" | "error"
 
@@ -14,11 +14,11 @@ const isTaskType = (type: string): type is TaskType => type === "start" || type 
 interface Request {
   request_id: string
   type: TaskType
-  prompt: string
-  image: string
-  model?: string
-  source_id?: string
-  source_name?: string
+  input: AgentInput
+  options?: {
+    source_id?: string
+    source_name?: string
+  }
 }
 
 interface ResponseCallback {
@@ -71,9 +71,9 @@ const errAgent = async (requestId: string) => {
 }
 
 const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
-  start: (req) => runner.start(req.request_id, req.prompt, req.model ?? "", req.image ?? ""),
-  cancel: (req) => runner.stop(req.request_id),
-  error: (req) => errAgent(req.request_id),
+  start: ({ request_id, input }) => runner.start(request_id, input),
+  cancel: ({ request_id }) => runner.stop(request_id),
+  error: ({ request_id }) => errAgent(request_id),
 }
 
 export const initMessageHandler = () => {
@@ -113,8 +113,8 @@ export const initMessageHandler = () => {
       const result = await handlers[type](request)
       const response = toResponse(request_id, type, true, result)
 
-      response.callback.source_id = request.source_id
-      response.callback.source_name = request.source_name
+      response.callback.source_id = request.options?.source_id || ""
+      response.callback.source_name = request.options?.source_name || "unknown"
 
       debugLog("Processed", { request_id, result })
       debugLog("Processed", { request_id, type, response })
@@ -130,8 +130,12 @@ export const initMessageHandler = () => {
 
       debugLog("Process crashed", { message: err.message, stack: err.stack })
 
-      const res = toResponse(request_id, type, false, err.message)
-      await publish(publishTopic, JSON.stringify(res), qos, retain)
+      const response = toResponse(request_id, type, false, err.message)
+
+      response.callback.source_id = request.options?.source_id || ""
+      response.callback.source_name = request.options?.source_name || "unknown"
+
+      await publish(publishTopic, JSON.stringify(response), qos, retain)
     }
   })
 }

@@ -16,8 +16,22 @@ interface ParsedEvent {
   providerID?: string
 }
 
+export interface AgentMediaInput {
+  image?: string
+  audio?: string
+  video?: string
+  file?: string
+}
+
+export interface AgentInput {
+  prompt: string
+  model?: string
+  agent?: string
+  media?: AgentMediaInput
+}
+
 export interface AgentRunner {
-  start(requestId: string, prompt: string, model?: string, image?: string): Promise<string>
+  start(requestId: string, input: AgentInput): Promise<string>
   stop(requestId: string): Promise<string>
 }
 
@@ -33,25 +47,23 @@ export class CommandRunner implements AgentRunner {
     return trimmed ? trimmed.split(/\s+/) : []
   }
 
-  async start(
-    requestId: string,
-    prompt: string,
-    model: string = "",
-    image: string = "",
-  ): Promise<string> {
-    if (!requestId || !prompt) {
-      debugLog("Start invalid request", { requestId, prompt, model })
+  async start(requestId: string, input: AgentInput): Promise<string> {
+    const { prompt, model, agent, media } = input
+
+    if (!requestId || !prompt.trim()) {
+      debugLog("Start invalid request", { requestId, prompt, model, agent })
       return "invalid request"
     }
 
-    if (image !== "") {
-      return "image input is not supported in CommandRunner"
+    if (media?.image || media?.audio || media?.video || media?.file) {
+      return "media input is not supported in CommandRunner"
     }
 
     debugLog("Running", {
       requestId,
       prompt,
       model,
+      agent,
       startCmd: env.agentStartCmd,
       startArgs: this.startArgs,
     })
@@ -61,7 +73,8 @@ export class CommandRunner implements AgentRunner {
         ...this.startArgs,
         taskId(requestId),
         prompt,
-        model,
+        model || "",
+        agent || "",
       ])
 
       if (this.cancelled.has(requestId)) {
@@ -137,12 +150,23 @@ export class APIRunner implements AgentRunner {
     return { text: "invalid response format" }
   }
 
-  async start(
-    requestId: string,
-    prompt: string,
-    model: string,
-    image: string = "",
-  ): Promise<string> {
+  private getMediaInfo(media?: AgentMediaInput): { mime: string; url: string } | undefined {
+    const url = media?.image || media?.audio || media?.video || media?.file
+    if (!url) {
+      return undefined
+    }
+
+    const match = /^data:([^;,]+)[;,]/.exec(url)
+    if (!match?.[1]) {
+      throw new Error("Invalid media data URL")
+    }
+
+    return { url, mime: match[1] }
+  }
+
+  async start(requestId: string, input: AgentInput): Promise<string> {
+    const { prompt, model, agent, media } = input
+
     const tid = taskId(requestId)
     let sessionId: string | undefined
     let aborted = false
@@ -170,14 +194,25 @@ export class APIRunner implements AgentRunner {
       sessionId = createData.id
       this.sessionCache.set(tid, sessionId)
 
-      debugLog("Send a sync message", { requestId, prompt, model, image: image.slice(0, 30) })
+      debugLog("Send a sync message", {
+        requestId,
+        prompt,
+        model,
+        agent,
+        media:
+          media?.image?.slice(0, 30) ||
+          media?.audio?.slice(0, 30) ||
+          media?.video?.slice(0, 30) ||
+          media?.file?.slice(0, 30),
+      })
 
-      const messages = this.oc.buildMessageParts(prompt, image)
+      const messages = this.oc.buildMessageParts(prompt, this.getMediaInfo(media))
 
       const messageResp = await this.oc.sendMessage(sessionId, messages, {
         signal: controller.signal,
         timeout: this.timeout,
-        model: model,
+        model: model || "",
+        agent: agent || "",
       })
       if (this.cancelled.has(tid)) {
         aborted = true
