@@ -33,6 +33,7 @@ interface Response {
   ok: boolean
   result: string
   callback: ResponseCallback
+  engine: string
   toJson: () => string
 }
 
@@ -58,6 +59,7 @@ const toResponse = (requestId: string, type: TaskType, ok: boolean, result: stri
     type,
     ok,
     result,
+    engine: env.agentEngine,
     callback: {
       region: clientId,
     },

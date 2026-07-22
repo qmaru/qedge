@@ -132,16 +132,16 @@ export class APIRunner implements AgentRunner {
   private timeout = env.agentTimeout * 1000
 
   private formatTokens(n: number) {
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
     return String(n)
   }
 
   private formatUsage(usage: ParsedEvent["usage"]): string {
     return [
-      `💰 ${this.formatTokens(usage?.tokens.total || 0)} tokens / $${usage?.cost.toFixed(6)}`,
-      `in ${this.formatTokens(usage?.tokens.input || 0)} / out ${this.formatTokens(usage?.tokens.output || 0)} / reasoning ${this.formatTokens(usage?.tokens.reasoning || 0)}`,
-      `cache read ${this.formatTokens(usage?.tokens.cache.read || 0)} / write ${this.formatTokens(usage?.tokens.cache.write || 0)}`,
-    ].join("\n")
+      `💰 **$${usage?.cost.toFixed(6)}** · **${this.formatTokens(usage?.tokens.total || 0)} tokens**\n`,
+      `**Input** ${this.formatTokens(usage?.tokens.input || 0)} **Output** ${this.formatTokens(usage?.tokens.output || 0)} **Reasoning** ${this.formatTokens(usage?.tokens.reasoning || 0)}`,
+      `**Cache RW** ${this.formatTokens(usage?.tokens.cache.read || 0)} · ${this.formatTokens(usage?.tokens.cache.write || 0)}`,
+    ].join("\n\n")
   }
 
   private eventParser = (resp: any): ParsedEvent => {
@@ -262,9 +262,14 @@ export class APIRunner implements AgentRunner {
 
       const usageInfo = this.formatUsage(usage)
 
-      return modelID && providerID
-        ? `${text}\n${usageInfo}\n\n[\`${providerID}/${modelID}\`]`
-        : `${text}\n${usageInfo}`
+      return [
+        text,
+        "---",
+        usageInfo,
+        modelID && providerID ? `[\`${providerID}/${modelID}\`]` : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
     } catch (error) {
       const err = error as Error
       if (this.cancelled.has(tid) || err.name === "AbortError") {
