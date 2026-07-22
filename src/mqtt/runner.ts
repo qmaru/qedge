@@ -14,6 +14,19 @@ interface ParsedEvent {
   text: string
   modelID?: string
   providerID?: string
+  usage?: {
+    cost: number
+    tokens: {
+      total: number
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        write: number
+        read: number
+      }
+    }
+  }
 }
 
 export interface AgentMediaInput {
@@ -118,6 +131,19 @@ export class APIRunner implements AgentRunner {
 
   private timeout = env.agentTimeout * 1000
 
+  private formatTokens(n: number) {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+    return String(n)
+  }
+
+  private formatUsage(usage: ParsedEvent["usage"]): string {
+    return [
+      `💰 ${this.formatTokens(usage?.tokens.total || 0)} tokens / $${usage?.cost.toFixed(6)}`,
+      `in ${this.formatTokens(usage?.tokens.input || 0)} / out ${this.formatTokens(usage?.tokens.output || 0)} / reasoning ${this.formatTokens(usage?.tokens.reasoning || 0)}`,
+      `cache read ${this.formatTokens(usage?.tokens.cache.read || 0)} / write ${this.formatTokens(usage?.tokens.cache.write || 0)}`,
+    ].join("\n")
+  }
+
   private eventParser = (resp: any): ParsedEvent => {
     if (!resp || !Array.isArray(resp.parts)) {
       debugLog("Invalid response format", { resp })
@@ -134,6 +160,10 @@ export class APIRunner implements AgentRunner {
         text,
         modelID: resp.info?.modelID,
         providerID: resp.info?.providerID,
+        usage: resp.info ?? {
+          cost: resp.info?.cost,
+          tokens: resp.info?.tokens ?? {},
+        },
       }
     }
 
@@ -203,7 +233,8 @@ export class APIRunner implements AgentRunner {
           media?.image?.slice(0, 30) ||
           media?.audio?.slice(0, 30) ||
           media?.video?.slice(0, 30) ||
-          media?.file?.slice(0, 30),
+          media?.file?.slice(0, 30) ||
+          "",
       })
 
       const messages = this.oc.buildMessageParts(prompt, this.getMediaInfo(media))
@@ -227,8 +258,13 @@ export class APIRunner implements AgentRunner {
       const resp = await messageResp.json()
       debugLog("Send message succeeded", { resp })
 
-      const { text, modelID, providerID } = this.eventParser(resp)
-      return modelID && providerID ? `${text}\n\n[\`${providerID}/${modelID}\`]` : text
+      const { text, modelID, providerID, usage } = this.eventParser(resp)
+
+      const usageInfo = this.formatUsage(usage)
+
+      return modelID && providerID
+        ? `${text}\n${usageInfo}\n\n[\`${providerID}/${modelID}\`]`
+        : `${text}\n${usageInfo}`
     } catch (error) {
       const err = error as Error
       if (this.cancelled.has(tid) || err.name === "AbortError") {
