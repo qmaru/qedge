@@ -12,6 +12,7 @@ export const env = {
   topic: Bun.env.MQTT_TOPIC ?? "ai/agent",
   qos: Number(Bun.env.MQTT_QOS ?? 2) as Qos,
   agentEngine: Bun.env.MQTT_AGENT_ENGINE ?? "opencode",
+  agentOutput: Bun.env.MQTT_AGENT_OUTPUT ?? "",
   agentTimeout: Number(Bun.env.MQTT_AGENT_TIMEOUT ?? 600),
   agentStartCmd: Bun.env.MQTT_AGENT_START_CMD ?? "",
   agentStartArgs: Bun.env.MQTT_AGENT_START_ARGS ?? "",

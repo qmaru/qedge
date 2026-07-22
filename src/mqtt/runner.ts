@@ -60,6 +60,27 @@ export class CommandRunner implements AgentRunner {
     return trimmed ? trimmed.split(/\s+/) : []
   }
 
+  private async saveMedia(requestId: string, media?: AgentMediaInput): Promise<string | undefined> {
+    const url = media?.image || media?.audio || media?.video || media?.file
+    if (!url) return undefined
+
+    const match = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url)
+    if (!match) throw new Error("Invalid media data URL")
+
+    const [, mime, encoding, data] = match
+    const extension = mime?.split("/")[1]?.replace(/[^a-z0-9]+/gi, "") || "bin"
+    const safeRequestId = requestId.replace(/[^a-z0-9_.-]+/gi, "_")
+    const outputDir = env.agentOutput.replace(/[\\/]+$/, "")
+    const filePath = `${outputDir}/${taskId(safeRequestId)}.${extension}`
+
+    const content = encoding
+      ? Uint8Array.from(atob(data ?? ""), (character) => character.charCodeAt(0))
+      : decodeURIComponent(data ?? "")
+    await Bun.write(filePath, content)
+
+    return filePath
+  }
+
   async start(requestId: string, input: AgentInput): Promise<string> {
     const { prompt, model, agent, media } = input
 
@@ -68,15 +89,18 @@ export class CommandRunner implements AgentRunner {
       return "invalid request"
     }
 
-    if (media?.image || media?.audio || media?.video || media?.file) {
+    if (!env.agentOutput && (media?.image || media?.audio || media?.video || media?.file)) {
       return "media input is not supported in CommandRunner"
     }
+
+    const mediaPath = await this.saveMedia(requestId, media)
 
     debugLog("Running", {
       requestId,
       prompt,
       model,
       agent,
+      mediaPath,
       startCmd: env.agentStartCmd,
       startArgs: this.startArgs,
     })
@@ -86,8 +110,9 @@ export class CommandRunner implements AgentRunner {
         ...this.startArgs,
         taskId(requestId),
         prompt,
-        model || "",
-        agent || "",
+        model ? `model=${model}` : "",
+        agent ? `agent=${agent}` : "",
+        mediaPath ? `image=${mediaPath}` : "",
       ])
 
       if (this.cancelled.has(requestId)) {
@@ -98,6 +123,13 @@ export class CommandRunner implements AgentRunner {
       return res.toText()
     } finally {
       this.cancelled.delete(requestId)
+      if (mediaPath) {
+        try {
+          await Bun.file(mediaPath).unlink()
+        } catch (error) {
+          debugLog("Failed to remove media file", { requestId, mediaPath, error })
+        }
+      }
     }
   }
 
