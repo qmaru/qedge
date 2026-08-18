@@ -168,11 +168,16 @@ export class APIRunner implements AgentRunner {
     return String(n)
   }
 
+  private formatCost(value: unknown): string {
+    const cost = Number(value)
+    return (Number.isFinite(cost) ? cost : 0).toFixed(6)
+  }
+
   private formatUsage(usage: ParsedEvent["usage"]): string {
     return [
-      `💰 **$${usage?.cost.toFixed(6)}** · **${this.formatTokens(usage?.tokens.total || 0)} tokens**\n`,
-      `**Input** ${this.formatTokens(usage?.tokens.input || 0)} **Output** ${this.formatTokens(usage?.tokens.output || 0)} **Reasoning** ${this.formatTokens(usage?.tokens.reasoning || 0)}`,
-      `**Cache RW** ${this.formatTokens(usage?.tokens.cache.read || 0)} · ${this.formatTokens(usage?.tokens.cache.write || 0)}`,
+      `💰 **$${this.formatCost(usage?.cost)}** · **${this.formatTokens(usage?.tokens?.total || 0)} tokens**`,
+      `**Input** ${this.formatTokens(usage?.tokens?.input || 0)} **Output** ${this.formatTokens(usage?.tokens?.output || 0)} **Reasoning** ${this.formatTokens(usage?.tokens?.reasoning || 0)}`,
+      `**Cache RW** ${this.formatTokens(usage?.tokens?.cache?.read || 0)} · ${this.formatTokens(usage?.tokens?.cache?.write || 0)}`,
     ].join("\n\n")
   }
 
