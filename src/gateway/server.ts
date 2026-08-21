@@ -42,6 +42,6 @@ export const startServer = () => {
 }
 
 export const stopServer = () => {
-  server?.stop(true)
+  void server?.stop(true)
   log("qedge gateway server stopped")
 }

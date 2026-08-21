@@ -7,7 +7,7 @@ import type { Qos } from "@/mqtt/config"
 let client = null as mqtt.MqttClient | null
 let readyPromise: Promise<mqtt.MqttClient> | null = null
 
-type MessageHandler = (topic: string, payload: Buffer) => void
+type MessageHandler = (topic: string, payload: Buffer) => void | Promise<void>
 const messageHandlers: MessageHandler[] = []
 
 export const onMessage = (handler: MessageHandler) => {
@@ -19,7 +19,12 @@ const getClient = async () => {
   return readyPromise
 }
 
-export const publish = async (topic: string, data: any, qos: Qos = 0, retain: boolean = false) => {
+export const publish = async (
+  topic: string,
+  data: unknown,
+  qos: Qos = 0,
+  retain: boolean = false,
+) => {
   const c = await getClient()
   const payload = typeof data === "string" ? data : JSON.stringify(data)
 
@@ -48,7 +53,7 @@ export const startClient = () => {
   client.on("message", (topic, payload) => {
     for (const handler of messageHandlers) {
       try {
-        handler(topic, payload)
+        void handler(topic, payload)
       } catch (e) {
         log("onMessage", { error: (e as Error).message })
       }

@@ -10,7 +10,7 @@ export interface RunResult {
 }
 
 export interface RunBackend {
-  run(...args: any[]): Promise<RunResult>
+  run(...args: unknown[]): Promise<RunResult>
 }
 
 const createRunResult = (result: Omit<RunResult, "toText">): RunResult => ({

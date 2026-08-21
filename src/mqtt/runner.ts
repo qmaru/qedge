@@ -10,20 +10,39 @@ const taskId = (requestId: string): string => {
   return taskPrefix + requestId
 }
 
+type ParsedUsage = {
+  cost: number
+  tokens: {
+    total: number
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      write: number
+      read: number
+    }
+  }
+}
+
 interface ParsedEvent {
   text: string
   modelID?: string
   providerID?: string
-  usage?: {
-    cost: number
-    tokens: {
-      total: number
-      input: number
-      output: number
-      reasoning: number
-      cache: {
-        write: number
-        read: number
+  usage?: ParsedUsage
+}
+
+interface EventResponse {
+  parts?: Array<{
+    type?: string
+    text?: string
+  }>
+  info?: Partial<ParsedUsage> & {
+    modelID?: string
+    providerID?: string
+    error?: {
+      message?: string
+      data?: {
+        message?: string
       }
     }
   }
@@ -181,35 +200,35 @@ export class APIRunner implements AgentRunner {
     ].join("\n\n")
   }
 
-  private eventParser = (resp: any): ParsedEvent => {
-    if (!resp || !Array.isArray(resp.parts)) {
+  private eventParser = (resp: unknown): ParsedEvent => {
+    const event = resp as EventResponse
+
+    if (!Array.isArray(event.parts)) {
       debugLog("Invalid response format", { resp })
       return { text: "invalid response format" }
     }
 
-    const text = resp.parts
-      .filter((part: any) => part?.type === "text" && typeof part?.text === "string")
-      .map((part: any) => part.text)
+    const text = event.parts
+      .flatMap((part) => (part.type === "text" && part.text ? [part.text] : []))
       .join("\n")
+
+    const info = event.info
 
     if (text) {
       return {
         text,
-        modelID: resp.info?.modelID,
-        providerID: resp.info?.providerID,
-        usage: resp.info ?? {
-          cost: resp.info?.cost,
-          tokens: resp.info?.tokens ?? {},
-        },
+        modelID: typeof info?.modelID === "string" ? info.modelID : undefined,
+        providerID: typeof info?.providerID === "string" ? info.providerID : undefined,
+        usage: info as ParsedUsage | undefined,
       }
     }
 
-    const errorText = resp.info?.error?.message || resp.info?.error?.data?.message
+    const errorText = info?.error?.message ?? info?.error?.data?.message
     if (errorText) {
       return {
         text: errorText,
-        modelID: resp.info?.modelID,
-        providerID: resp.info?.providerID,
+        modelID: typeof info?.modelID === "string" ? info.modelID : undefined,
+        providerID: typeof info?.providerID === "string" ? info.providerID : undefined,
       }
     }
 
@@ -318,7 +337,7 @@ export class APIRunner implements AgentRunner {
         await this.oc.deleteSession(sessionId).catch(() => undefined)
       }
       debugLog("Error occurred", { requestId, error })
-      return `error: ${error}`
+      return `error: ${err.message}`
     } finally {
       this.controllers.delete(tid)
       this.sessionCache.delete(tid)

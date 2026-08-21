@@ -5,5 +5,7 @@ const shutdown = createShutdown()
 
 startServer()
 
-shutdown.register(() => stopServer())
+shutdown.register(() => {
+  stopServer()
+})
 shutdown.listen()

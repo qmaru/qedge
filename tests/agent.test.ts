@@ -4,11 +4,18 @@ import { env } from "@/mqtt/config"
 import { CommandBackend } from "@/mqtt/utils"
 import { CommandRunner, APIRunner } from "@/mqtt/runner"
 
-const eventParser = (text: string) => {
+interface TestEvent {
+  type?: string
+  part?: {
+    text?: string
+  }
+}
+
+const eventParser = (text: string): TestEvent[] => {
   return text
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((line) => JSON.parse(line))
+    .map((line) => JSON.parse(line) as TestEvent)
 }
 
 describe("CommandBackend", () => {
@@ -36,7 +43,7 @@ describe("CommandBackend", () => {
 
       const textEvent = events.find((e) => e.type === "text")
       expect(textEvent).toBeDefined()
-      console.log(textEvent!.part.text)
+      console.log(textEvent!.part!.text)
     },
     1000 * 600,
   )
@@ -61,7 +68,7 @@ describe("CommandRunner", () => {
 
       const textEvent = events.find((e) => e.type === "text")
       expect(textEvent).toBeDefined()
-      console.log(textEvent!.part.text)
+      console.log(textEvent!.part!.text)
     },
     1000 * 600,
   )

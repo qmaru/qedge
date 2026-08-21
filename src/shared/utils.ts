@@ -36,7 +36,7 @@ export const createShutdown = () => {
 
     log(`qedge shutdown on ${signal}`)
 
-    await Promise.allSettled(cleanups.map((fn) => fn()))
+    await Promise.allSettled(cleanups.map((fn) => Promise.resolve(fn())))
     process.exit(0)
   }
 
@@ -44,8 +44,12 @@ export const createShutdown = () => {
     if (listening) return
     listening = true
 
-    process.on("SIGINT", () => shutdown("SIGINT"))
-    process.on("SIGTERM", () => shutdown("SIGTERM"))
+    process.on("SIGINT", () => {
+      void shutdown("SIGINT")
+    })
+    process.on("SIGTERM", () => {
+      void shutdown("SIGTERM")
+    })
   }
 
   return { register, shutdown, listen }

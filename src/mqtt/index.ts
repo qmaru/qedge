@@ -9,7 +9,9 @@ const run = async () => {
   initMessageHandler()
 }
 
-run()
+void run()
 
-shutdown.register(() => stopClient())
+shutdown.register(() => {
+  stopClient()
+})
 shutdown.listen()

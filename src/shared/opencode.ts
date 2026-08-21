@@ -55,10 +55,7 @@ export class Opencode {
         timeout != null
           ? AbortSignal.any([AbortSignal.timeout(timeout), ...(signal ? [signal] : [])])
           : signal,
-      headers: {
-        ...this.headers,
-        ...init.headers,
-      },
+      headers: Object.assign({}, this.headers, init.headers),
     })
   }
 

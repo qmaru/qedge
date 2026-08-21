@@ -87,7 +87,7 @@ export const initMessageHandler = () => {
     let request: Request
 
     try {
-      request = JSON.parse(raw)
+      request = JSON.parse(raw) as Request
     } catch {
       const response = toResponse("", "error", false, "invalid payload")
       debugLog("Parse failed", { raw })

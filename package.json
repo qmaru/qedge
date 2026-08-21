@@ -3,11 +3,11 @@
   "module": "index.ts",
   "devDependencies": {
     "@types/bun": "latest",
-    "oxfmt": "^0.59.0",
-    "oxlint": "^1.74.0"
+    "oxfmt": "^0.64.0",
+    "oxlint": "^1.79.0"
   },
   "scripts": {
-    "lint": "oxlint",
+    "lint": "oxlint --type-aware --type-check",
     "fmt": "oxfmt",
     "dev:gw": "bun --watch src/gateway/index.ts",
     "build:gw": "bun build src/gateway/index.ts --bytecode --target bun --production --outdir=dist",
