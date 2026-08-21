@@ -118,8 +118,8 @@ export const initMessageHandler = () => {
       response.callback.source_id = request.options?.source_id || ""
       response.callback.source_name = request.options?.source_name || "unknown"
 
-      debugLog("Processed", { request_id, result })
-      debugLog("Processed", { request_id, type, response })
+      debugLog("Processed result", { request_id, result })
+      debugLog("Processed response", { request_id, type, response })
 
       if (type === "start" && result === "[cancelled]") {
         debugLog("drop cancelled result", { request_id })

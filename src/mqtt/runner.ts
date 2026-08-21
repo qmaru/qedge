@@ -32,6 +32,13 @@ interface ParsedEvent {
 }
 
 interface EventResponse {
+  type?: string
+  part?: {
+    type?: string
+    text?: string
+    tokens?: ParsedUsage["tokens"]
+    cost?: number
+  }
   parts?: Array<{
     type?: string
     text?: string
@@ -45,6 +52,63 @@ interface EventResponse {
         message?: string
       }
     }
+  }
+}
+
+const formatTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
+
+const formatUsage = (usage?: ParsedUsage) =>
+  [
+    `💰 **$${Number(usage?.cost || 0).toFixed(6)}** · **${formatTokens(usage?.tokens?.total || 0)} tokens**`,
+    `**Input** ${formatTokens(usage?.tokens?.input || 0)} **Output** ${formatTokens(usage?.tokens?.output || 0)} **Reasoning** ${formatTokens(usage?.tokens?.reasoning || 0)}`,
+    `**Cache RW** ${formatTokens(usage?.tokens?.cache?.read || 0)} · ${formatTokens(usage?.tokens?.cache?.write || 0)}`,
+  ].join("\n\n")
+
+const formatResult = (event: ParsedEvent) =>
+  [event.text, "---", formatUsage(event.usage), event.modelID && event.providerID ? `[\`${event.providerID}/${event.modelID}\`]` : null]
+    .filter(Boolean)
+    .join("\n\n")
+
+const parseCommandResult = (raw: string): ParsedEvent => {
+  const events = raw
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as EventResponse)
+
+  const text = events
+    .flatMap((event) => (event.type === "text" && event.part?.text ? [event.part.text] : []))
+    .join("\n")
+  const usage = events
+    .filter((event) => event.type === "step_finish" && event.part?.tokens)
+    .reduce<ParsedUsage>(
+      (total, event) => {
+        const tokens = event.part!.tokens!
+
+        total.cost += event.part?.cost || 0
+        total.tokens.total += tokens.total
+        total.tokens.input += tokens.input
+        total.tokens.output += tokens.output
+        total.tokens.reasoning += tokens.reasoning
+        total.tokens.cache.read += tokens.cache.read
+        total.tokens.cache.write += tokens.cache.write
+
+        return total
+      },
+      {
+        cost: 0,
+        tokens: {
+          total: 0,
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+      },
+    )
+
+  return {
+    text: text || "invalid response format",
+    usage: usage.tokens.total > 0 ? usage : undefined,
   }
 }
 
@@ -139,7 +203,7 @@ export class CommandRunner implements AgentRunner {
         return "[cancelled]"
       }
 
-      return res.toText()
+      return formatResult(parseCommandResult(res.toText()))
     } finally {
       this.cancelled.delete(requestId)
       if (mediaPath) {
@@ -181,24 +245,6 @@ export class APIRunner implements AgentRunner {
   })
 
   private timeout = env.agentTimeout * 1000
-
-  private formatTokens(n: number) {
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
-    return String(n)
-  }
-
-  private formatCost(value: unknown): string {
-    const cost = Number(value)
-    return (Number.isFinite(cost) ? cost : 0).toFixed(6)
-  }
-
-  private formatUsage(usage: ParsedEvent["usage"]): string {
-    return [
-      `💰 **$${this.formatCost(usage?.cost)}** · **${this.formatTokens(usage?.tokens?.total || 0)} tokens**`,
-      `**Input** ${this.formatTokens(usage?.tokens?.input || 0)} **Output** ${this.formatTokens(usage?.tokens?.output || 0)} **Reasoning** ${this.formatTokens(usage?.tokens?.reasoning || 0)}`,
-      `**Cache RW** ${this.formatTokens(usage?.tokens?.cache?.read || 0)} · ${this.formatTokens(usage?.tokens?.cache?.write || 0)}`,
-    ].join("\n\n")
-  }
 
   private eventParser = (resp: unknown): ParsedEvent => {
     const event = resp as EventResponse
@@ -316,16 +362,7 @@ export class APIRunner implements AgentRunner {
 
       const { text, modelID, providerID, usage } = this.eventParser(resp)
 
-      const usageInfo = this.formatUsage(usage)
-
-      return [
-        text,
-        "---",
-        usageInfo,
-        modelID && providerID ? `[\`${providerID}/${modelID}\`]` : null,
-      ]
-        .filter(Boolean)
-        .join("\n\n")
+      return formatResult({ text, modelID, providerID, usage })
     } catch (error) {
       const err = error as Error
       if (this.cancelled.has(tid) || err.name === "AbortError") {
