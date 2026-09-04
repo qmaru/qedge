@@ -1,6 +1,18 @@
 {
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    "dist/**",
+    "coverage/**",
+    "vendor/**",
+    "test/snapshots/**"
+  ],
+  "options": {
+    "typeAware": true,
+    "typeCheck": true
+  },
   "plugins": [
-    "typescript"
+    "typescript",
+    "import"
   ],
   "rules": {
     "typescript/no-floating-promises": "error",
@@ -16,6 +28,8 @@
     "typescript/no-unnecessary-type-assertion": "off",
     "typescript/await-thenable": "warn",
     "typescript/require-await": "off",
-    "typescript/no-confusing-void-expression": "warn"
+    "typescript/no-confusing-void-expression": "warn",
+    "promise/prefer-await-to-then": "error",
+    "promise/prefer-await-to-callbacks": "error"
   }
 }

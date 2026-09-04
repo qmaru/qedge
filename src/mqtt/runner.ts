@@ -1,8 +1,7 @@
-import { debugLog } from "@/shared/utils"
 import { env } from "@/mqtt/config"
-
-import { Opencode } from "@/shared/opencode"
 import { CommandBackend } from "@/mqtt/utils"
+import { Opencode } from "@/shared/opencode"
+import { debugLog } from "@/shared/utils"
 
 const taskPrefix = "agent-task-"
 
@@ -65,7 +64,12 @@ const formatUsage = (usage?: ParsedUsage) =>
   ].join("\n\n")
 
 const formatResult = (event: ParsedEvent) =>
-  [event.text, "---", formatUsage(event.usage), event.modelID && event.providerID ? `[\`${event.providerID}/${event.modelID}\`]` : null]
+  [
+    event.text,
+    "---",
+    formatUsage(event.usage),
+    event.modelID && event.providerID ? `[\`${event.providerID}/${event.modelID}\`]` : null,
+  ]
     .filter(Boolean)
     .join("\n\n")
 

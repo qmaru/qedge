@@ -1,8 +1,8 @@
 import { describe, test, expect } from "bun:test"
-import { env } from "@/mqtt/config"
 
-import { CommandBackend } from "@/mqtt/utils"
+import { env } from "@/mqtt/config"
 import { CommandRunner, APIRunner } from "@/mqtt/runner"
+import { CommandBackend } from "@/mqtt/utils"
 
 interface TestEvent {
   type?: string
