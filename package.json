@@ -3,9 +3,9 @@
   "module": "index.ts",
   "devDependencies": {
     "@types/bun": "latest",
-    "oxfmt": "^0.66.0",
-    "oxlint": "^1.81.0",
-    "oxlint-tsgolint": "^7.0.2001"
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "oxlint-tsgolint": "^7.0.2002"
   },
   "scripts": {
     "lint": "oxlint --type-aware --type-check",
@@ -21,6 +21,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "mqtt": "^5.15.2"
+    "mqtt": "^5.16.0"
   }
 }

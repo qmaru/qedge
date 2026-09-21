@@ -1,27 +1,24 @@
 import { debugLog } from "@/shared/utils"
 
-export interface TextPart {
-  type: "text"
-  text: string
+export interface Model {
+  id: string
+  providerID: string
+  variant?: string
 }
 
 export interface FilePart {
-  type: "file"
-  mime: string
-  filename?: string
-  url: string
+  uri: string
+  name?: string
 }
 
-export type MessagePart = TextPart | FilePart
+export interface PromptBody {
+  text: string
+  files?: FilePart[]
+}
 
 export interface RequestOptions {
   timeout?: number
   signal?: AbortSignal
-}
-
-export interface SendMessageOptions extends RequestOptions {
-  model?: string
-  agent?: string
 }
 
 export class Opencode {
@@ -43,10 +40,7 @@ export class Opencode {
     return headers
   }
 
-  private async request(
-    path: string,
-    init: RequestInit & { timeout?: number } = {},
-  ): Promise<Response> {
+  private request(path: string, init: RequestInit & { timeout?: number } = {}): Promise<Response> {
     const { timeout, signal, ...rest } = init
 
     return fetch(new URL(path, this.endpoint), {
@@ -59,68 +53,44 @@ export class Opencode {
     })
   }
 
-  private parseModel(model: string) {
-    const [providerID, modelID, ...rest] = model.split("/")
+  parseModel(model: string): Model {
+    const [providerID, id, ...rest] = model.split("/")
 
-    if (!providerID || !modelID || rest.length > 0) {
+    if (!providerID || !id || rest.length > 0) {
       throw new Error(`Invalid model: ${model}`)
     }
 
-    return { providerID, modelID }
+    return { providerID, id }
   }
 
-  buildMessageParts(prompt: string, file?: { mime: string; url: string }): MessagePart[] {
-    if (!file) {
-      return [{ type: "text", text: prompt }]
-    }
-
-    if (file.mime.startsWith("image/")) {
-      return [
-        { type: "text", text: prompt.trim() || "Please describe the image." },
-        {
-          type: "file",
-          mime: file.mime,
-          url: file.url,
-        },
-      ]
-    }
-
-    return [
-      {
-        type: "file",
-        mime: file.mime,
-        url: file.url,
-      },
-    ]
-  }
-
-  createSession(title?: string, options?: RequestOptions) {
-    return this.request("/session", {
+  createSession(title?: string, model?: Model, options?: RequestOptions) {
+    return this.request("/api/session", {
       method: "POST",
-      body: title ? JSON.stringify({ title }) : undefined,
+      body: JSON.stringify({
+        title: title || undefined,
+        model: model || undefined,
+      }),
       signal: options?.signal,
       timeout: options?.timeout,
     })
   }
 
-  getSession(sessionId?: string, options?: RequestOptions) {
-    const path = sessionId ? `/session/${encodeURIComponent(sessionId)}` : "/session"
-
-    return this.request(path, {
+  getSession(sessionId: string, options?: RequestOptions) {
+    return this.request(`/api/session/${encodeURIComponent(sessionId)}`, {
       signal: options?.signal,
       timeout: options?.timeout,
     })
   }
 
-  getSessionStatus(options?: RequestOptions) {
-    return this.request("/session/status", {
+  listSessions(options?: RequestOptions) {
+    return this.request("/api/session", {
       signal: options?.signal,
       timeout: options?.timeout,
     })
   }
 
-  abortSession(sessionId: string, options?: RequestOptions) {
-    return this.request(`/session/${encodeURIComponent(sessionId)}/abort`, {
+  interruptSession(sessionId: string, options?: RequestOptions) {
+    return this.request(`/api/session/${encodeURIComponent(sessionId)}/interrupt`, {
       method: "POST",
       signal: options?.signal,
       timeout: options?.timeout,
@@ -128,42 +98,43 @@ export class Opencode {
   }
 
   deleteSession(sessionId: string, options?: RequestOptions) {
-    return this.request(`/session/${encodeURIComponent(sessionId)}`, {
+    return this.request(`/api/session/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
       signal: options?.signal,
       timeout: options?.timeout,
     })
   }
 
-  sendMessage(sessionId: string, parts: MessagePart[], options?: SendMessageOptions) {
-    const body = {
-      parts,
-      ...(options?.model && { model: this.parseModel(options.model) }),
-      ...(options?.agent && { agent: options.agent }),
-    }
-
+  sendMessage(sessionId: string, prompt: PromptBody, options?: RequestOptions) {
     debugLog("Send body", {
       sessionId,
-      messages: parts.map((msg) =>
-        msg.type === "file"
-          ? {
-              ...msg,
-              url: msg.url.length > 30 ? msg.url.slice(0, 30) + "..." : msg.url,
-            }
-          : msg,
-      ),
+      body: {
+        ...prompt,
+        files: prompt.files?.map((file) => ({
+          ...file,
+          uri: file.uri.length > 100 ? `${file.uri.slice(0, 100)}...` : file.uri,
+        })),
+      },
     })
 
-    return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
+    return this.request(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(prompt),
+      signal: options?.signal,
+      timeout: options?.timeout,
+    })
+  }
+
+  waitSession(sessionId: string, options?: RequestOptions) {
+    return this.request(`/api/experimental/session/${encodeURIComponent(sessionId)}/wait`, {
+      method: "POST",
       signal: options?.signal,
       timeout: options?.timeout,
     })
   }
 
   getMessages(sessionId: string, options?: RequestOptions) {
-    return this.request(`/session/${encodeURIComponent(sessionId)}/message`, {
+    return this.request(`/api/session/${encodeURIComponent(sessionId)}/message`, {
       signal: options?.signal,
       timeout: options?.timeout,
     })

@@ -3,6 +3,8 @@ import { CommandBackend } from "@/mqtt/utils"
 import { Opencode } from "@/shared/opencode"
 import { debugLog } from "@/shared/utils"
 
+import type { PromptBody } from "@/shared/opencode"
+
 const taskPrefix = "agent-task-"
 
 const taskId = (requestId: string): string => {
@@ -31,26 +33,35 @@ interface ParsedEvent {
 }
 
 interface EventResponse {
+  id?: string
+  type?: string
+  model?: {
+    id?: string
+    providerID?: string
+  }
+  content?: Array<{
+    type?: string
+    text?: string
+  }>
+  cost?: number
+  tokens?: {
+    input?: number
+    output?: number
+    reasoning?: number
+    cache?: {
+      read?: number
+      write?: number
+    }
+  }
+}
+
+interface CommandEventResponse {
   type?: string
   part?: {
     type?: string
     text?: string
     tokens?: ParsedUsage["tokens"]
     cost?: number
-  }
-  parts?: Array<{
-    type?: string
-    text?: string
-  }>
-  info?: Partial<ParsedUsage> & {
-    modelID?: string
-    providerID?: string
-    error?: {
-      message?: string
-      data?: {
-        message?: string
-      }
-    }
   }
 }
 
@@ -77,11 +88,12 @@ const parseCommandResult = (raw: string): ParsedEvent => {
   const events = raw
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as EventResponse)
+    .map((line) => JSON.parse(line) as CommandEventResponse)
 
   const text = events
     .flatMap((event) => (event.type === "text" && event.part?.text ? [event.part.text] : []))
     .join("\n")
+
   const usage = events
     .filter((event) => event.type === "step_finish" && event.part?.tokens)
     .reduce<ParsedUsage>(
@@ -105,7 +117,10 @@ const parseCommandResult = (raw: string): ParsedEvent => {
           input: 0,
           output: 0,
           reasoning: 0,
-          cache: { read: 0, write: 0 },
+          cache: {
+            read: 0,
+            write: 0,
+          },
         },
       },
     )
@@ -253,37 +268,47 @@ export class APIRunner implements AgentRunner {
   private eventParser = (resp: unknown): ParsedEvent => {
     const event = resp as EventResponse
 
-    if (!Array.isArray(event.parts)) {
+    if (
+      event.type !== "assistant" ||
+      !event.model ||
+      !Array.isArray(event.content) ||
+      !event.tokens
+    ) {
       debugLog("Invalid response format", { resp })
       return { text: "invalid response format" }
     }
 
-    const text = event.parts
-      .flatMap((part) => (part.type === "text" && part.text ? [part.text] : []))
+    const text = event.content
+      .filter((part) => part.type === "text" && part.text)
+      .map((part) => part.text!)
       .join("\n")
 
-    const info = event.info
+    const tokens = event.tokens
 
-    if (text) {
-      return {
-        text,
-        modelID: typeof info?.modelID === "string" ? info.modelID : undefined,
-        providerID: typeof info?.providerID === "string" ? info.providerID : undefined,
-        usage: info as ParsedUsage | undefined,
-      }
+    const usage: ParsedUsage = {
+      cost: event.cost ?? 0,
+      tokens: {
+        total: (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0),
+        input: tokens.input ?? 0,
+        output: tokens.output ?? 0,
+        reasoning: tokens.reasoning ?? 0,
+        cache: {
+          read: tokens.cache?.read ?? 0,
+          write: tokens.cache?.write ?? 0,
+        },
+      },
     }
 
-    const errorText = info?.error?.message ?? info?.error?.data?.message
-    if (errorText) {
-      return {
-        text: errorText,
-        modelID: typeof info?.modelID === "string" ? info.modelID : undefined,
-        providerID: typeof info?.providerID === "string" ? info.providerID : undefined,
-      }
+    if (!text) {
+      return { text: "invalid response format" }
     }
 
-    debugLog("Invalid response format", { resp })
-    return { text: "invalid response format" }
+    return {
+      text,
+      modelID: event.model.id,
+      providerID: event.model.providerID,
+      usage,
+    }
   }
 
   private getMediaInfo(media?: AgentMediaInput): { mime: string; url: string } | undefined {
@@ -301,7 +326,7 @@ export class APIRunner implements AgentRunner {
   }
 
   async start(requestId: string, input: AgentInput): Promise<string> {
-    const { prompt, model, agent, media } = input
+    const { prompt, model, media } = input
 
     const tid = taskId(requestId)
     let sessionId: string | undefined
@@ -313,9 +338,18 @@ export class APIRunner implements AgentRunner {
     this.controllers.set(tid, controller)
 
     try {
-      debugLog("Create a session", { requestId })
+      debugLog("Create a session", {
+        requestId,
+        model,
+      })
 
-      const createResp = await this.oc.createSession(tid, { signal: controller.signal })
+      const promptModel = model ? this.oc.parseModel(model) : undefined
+
+      const createResp = await this.oc.createSession(tid, promptModel, {
+        signal: controller.signal,
+        timeout: this.timeout,
+      })
+
       if (this.cancelled.has(tid)) {
         aborted = true
         return "[cancelled]"
@@ -326,15 +360,18 @@ export class APIRunner implements AgentRunner {
         return `create session failed: ${createResp.status} ${createResp.statusText}`
       }
 
-      const createData = (await createResp.json()) as { id: string }
-      sessionId = createData.id
+      const createData = (await createResp.json()) as {
+        data: {
+          id: string
+        }
+      }
+
+      sessionId = createData.data.id
       this.sessionCache.set(tid, sessionId)
 
       debugLog("Send a sync message", {
         requestId,
         prompt,
-        model,
-        agent,
         media:
           media?.image?.slice(0, 30) ||
           media?.audio?.slice(0, 30) ||
@@ -343,14 +380,26 @@ export class APIRunner implements AgentRunner {
           "",
       })
 
-      const messages = this.oc.buildMessageParts(prompt, this.getMediaInfo(media))
+      const file = this.getMediaInfo(media)
 
-      const messageResp = await this.oc.sendMessage(sessionId, messages, {
+      const promptBody: PromptBody = {
+        text: prompt,
+        ...(file
+          ? {
+              files: [
+                {
+                  uri: file.url,
+                },
+              ],
+            }
+          : {}),
+      }
+
+      const messageResp = await this.oc.sendMessage(sessionId, promptBody, {
         signal: controller.signal,
         timeout: this.timeout,
-        model: model || "",
-        agent: agent || "",
       })
+
       if (this.cancelled.has(tid)) {
         aborted = true
         return "[cancelled]"
@@ -361,23 +410,89 @@ export class APIRunner implements AgentRunner {
         return `send message failed: ${messageResp.status} ${messageResp.statusText}`
       }
 
-      const resp = await messageResp.json()
-      debugLog("Send message succeeded", { resp })
+      await messageResp.json()
 
-      const { text, modelID, providerID, usage } = this.eventParser(resp)
+      const waitResp = await this.oc.waitSession(sessionId, {
+        signal: controller.signal,
+        timeout: this.timeout,
+      })
 
-      return formatResult({ text, modelID, providerID, usage })
+      if (this.cancelled.has(tid)) {
+        aborted = true
+        return "[cancelled]"
+      }
+
+      if (!waitResp.ok) {
+        debugLog("Wait session failed", { waitResp })
+        return `wait session failed: ${waitResp.status} ${waitResp.statusText}`
+      }
+
+      const messagesResp = await this.oc.getMessages(sessionId, {
+        signal: controller.signal,
+        timeout: this.timeout,
+      })
+
+      if (this.cancelled.has(tid)) {
+        aborted = true
+        return "[cancelled]"
+      }
+
+      if (!messagesResp.ok) {
+        debugLog("Get messages failed", { messagesResp })
+        return `get messages failed: ${messagesResp.status} ${messagesResp.statusText}`
+      }
+
+      const messagesData = (await messagesResp.json()) as {
+        data: Array<{
+          id: string
+          type: string
+          [key: string]: unknown
+        }>
+        cursor: {
+          previous: string | null
+          next: string | null
+        }
+      }
+
+      const assistantMessage = [...messagesData.data]
+        .reverse()
+        .find((message) => message.type === "assistant")
+
+      if (!assistantMessage) {
+        debugLog("Assistant message not found", {
+          requestId,
+          messages: messagesData.data,
+        })
+
+        return "error: assistant message not found"
+      }
+
+      debugLog("Send message succeeded", {
+        requestId,
+        messageId: assistantMessage.id,
+      })
+
+      const { text, modelID, providerID, usage } = this.eventParser(assistantMessage)
+
+      return formatResult({
+        text,
+        modelID,
+        providerID,
+        usage,
+      })
     } catch (error) {
       const err = error as Error
+
       if (this.cancelled.has(tid) || err.name === "AbortError") {
         aborted = true
         return "[cancelled]"
       }
 
-      if (sessionId) {
-        await this.oc.deleteSession(sessionId).catch(() => undefined)
-      }
-      debugLog("Error occurred", { requestId, error })
+      debugLog("Error occurred", {
+        requestId,
+        error,
+      })
+
       return `error: ${err.message}`
     } finally {
       this.controllers.delete(tid)
