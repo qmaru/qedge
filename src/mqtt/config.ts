@@ -21,4 +21,6 @@ export const env = {
   agentEndpoint: Bun.env.MQTT_AGENT_ENDPOINT ?? "",
   agentUsername: Bun.env.MQTT_AGENT_USERNAME ?? "",
   agentPassword: Bun.env.MQTT_AGENT_PASSWORD ?? "",
+  agentHTTPHost: Bun.env.MQTT_AGENT_HTTP_HOST ?? "127.0.0.1",
+  agentHTTPPort: Number(Bun.env.MQTT_AGENT_HTTP_PORT ?? 3001),
 }

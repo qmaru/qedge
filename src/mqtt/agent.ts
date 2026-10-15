@@ -77,66 +77,58 @@ const handlers: Record<TaskType, (req: Request) => Promise<string>> = {
   error: ({ request_id }) => errAgent(request_id),
 }
 
+export const handleRequest = async (raw: string): Promise<Response> => {
+  debugLog("Received", { raw })
+
+  let request: Request
+
+  try {
+    request = JSON.parse(raw) as Request
+  } catch {
+    debugLog("Parse failed", { raw })
+    return toResponse("", "error", false, "invalid payload")
+  }
+
+  const { request_id, type } = request
+
+  if (!request_id) {
+    debugLog("Missing id", { request })
+    return toResponse("", type, false, "no request id provided")
+  }
+
+  if (!isTaskType(type)) {
+    debugLog("Unknown type", { request_id, type })
+    return toResponse(request_id, type, false, "unknown task type")
+  }
+
+  let ok = true
+  let result: string
+
+  try {
+    result = await handlers[type](request)
+    debugLog("Processed result", { request_id, result })
+  } catch (e) {
+    const err = e as Error
+    debugLog("Process crashed", { message: err.message, stack: err.stack })
+    ok = false
+    result = err.message
+  }
+
+  const response = toResponse(request_id, type, ok, result)
+  response.callback.source_id = request.options?.source_id || ""
+  response.callback.source_name = request.options?.source_name || "unknown"
+  return response
+}
+
 export const initMessageHandler = () => {
-  onMessage(async (topic, payload) => {
-    const raw = payload.toString()
+  onMessage(async (_topic, payload) => {
+    const response = await handleRequest(payload.toString())
 
-    debugLog("Received", { raw, topic })
-
-    let request: Request
-
-    try {
-      request = JSON.parse(raw) as Request
-    } catch {
-      const response = toResponse("", "error", false, "invalid payload")
-      debugLog("Parse failed", { raw })
-      await publish(publishTopic, response.toJson(), qos, retain)
+    if (response.type === "start" && response.result === "[cancelled]") {
+      debugLog("drop cancelled result", { request_id: response.request_id })
       return
     }
 
-    const { request_id, type } = request
-
-    if (!request_id) {
-      const response = toResponse("", type, false, "no request id provided")
-      debugLog("Missing id", { request })
-      await publish(publishTopic, response.toJson(), qos, retain)
-      return
-    }
-
-    if (!isTaskType(type)) {
-      const response = toResponse(request_id, type, false, "unknown task type")
-      debugLog("Unknown type", { request_id, type })
-      await publish(publishTopic, response.toJson(), qos, retain)
-      return
-    }
-
-    try {
-      const result = await handlers[type](request)
-      const response = toResponse(request_id, type, true, result)
-
-      response.callback.source_id = request.options?.source_id || ""
-      response.callback.source_name = request.options?.source_name || "unknown"
-
-      debugLog("Processed result", { request_id, result })
-      debugLog("Processed response", { request_id, type, response })
-
-      if (type === "start" && result === "[cancelled]") {
-        debugLog("drop cancelled result", { request_id })
-        return
-      }
-
-      await publish(publishTopic, response.toJson(), qos, retain)
-    } catch (e) {
-      const err = e as Error
-
-      debugLog("Process crashed", { message: err.message, stack: err.stack })
-
-      const response = toResponse(request_id, type, false, err.message)
-
-      response.callback.source_id = request.options?.source_id || ""
-      response.callback.source_name = request.options?.source_name || "unknown"
-
-      await publish(publishTopic, JSON.stringify(response), qos, retain)
-    }
+    await publish(publishTopic, response.toJson(), qos, retain)
   })
 }

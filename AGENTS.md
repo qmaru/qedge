@@ -14,7 +14,7 @@ These subprojects are not business-related and do not share runtime state. They 
 ## Directory Responsibilities
 
 - `src/gateway`: edge gateway entry point. Reads `GATEWAY_*` configuration, derives a routing key from the Bearer token, and forwards requests.
-- `src/mqtt`: MQTT agent entry point. Connects to the broker, subscribes to topics, handles `start` / `cancel` / `error` messages, and returns execution results.
+- `src/mqtt`: MQTT agent entry point. Connects to the broker, subscribes to topics, handles `start` / `cancel` / `error` messages, and returns execution results. `http.ts` is a local test entry (`bun run dev:mqtt:http`, bound to `MQTT_AGENT_HTTP_HOST` / `MQTT_AGENT_HTTP_PORT`, default `127.0.0.1:3001`) that accepts the same JSON payload as the subscription and returns the response directly, without a broker. `index.ts` also starts this endpoint when run with `--with-http` (`bun run dev:mqtt --with-http`).
 - `src/shared`: shared capability layer containing only utilities that are not specific to a subproject, such as logging, graceful shutdown, encoding conversion, and shared client wrappers.
 - `src/config.ts`: repository-level base configuration, mainly used for debug switches.
 - `tests`: tests around the MQTT agent execution flow.

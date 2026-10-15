@@ -13,6 +13,7 @@
     "dev:gw": "bun --watch src/gateway/index.ts",
     "build:gw": "bun build src/gateway/index.ts --bytecode --target bun --production --outdir=dist",
     "dev:mqtt": "bun --watch src/mqtt/index.ts",
+    "dev:mqtt:http": "bun --watch src/mqtt/http.ts",
     "build:mqtt": "bun build src/mqtt/index.ts --bytecode --target bun --production --outdir=dist"
   },
   "peerDependencies": {
@@ -21,6 +22,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "commander": "^15.0.0",
     "mqtt": "^5.16.1"
   }
 }
