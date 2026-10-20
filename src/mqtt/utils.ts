@@ -20,7 +20,7 @@ const createRunResult = (result: Omit<RunResult, "toText">): RunResult => ({
       return this.stderr || this.stdout || `code=${this.code}`
     }
 
-    return this.stdout || "ok"
+    return this.stdout
   },
 })
 
@@ -45,6 +45,6 @@ export class CommandBackend implements RunBackend {
       return createRunResult({ ok: false, stdout, stderr, code })
     }
 
-    return createRunResult({ ok: true, stdout: stdout || "ok", stderr, code })
+    return createRunResult({ ok: true, stdout, stderr, code })
   }
 }

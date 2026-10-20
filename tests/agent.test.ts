@@ -4,20 +4,6 @@ import { env } from "@/mqtt/config"
 import { CommandRunner, APIRunner } from "@/mqtt/runner"
 import { CommandBackend } from "@/mqtt/utils"
 
-interface TestEvent {
-  type?: string
-  part?: {
-    text?: string
-  }
-}
-
-const eventParser = (text: string): TestEvent[] => {
-  return text
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as TestEvent)
-}
-
 describe("CommandBackend", () => {
   const test_id = `test-${Date.now()}`
   const test_prompt = "my skills"
@@ -37,13 +23,8 @@ describe("CommandBackend", () => {
       expect(result.stderr).toBeString()
       expect(result.code).toBeNumber()
 
-      const text = result.toText()
-      const events = eventParser(text)
-      expect(events.length).toBeGreaterThan(0)
-
-      const textEvent = events.find((e) => e.type === "text")
-      expect(textEvent).toBeDefined()
-      console.log(textEvent!.part!.text)
+      const data = JSON.parse(result.toText()) as { messages?: unknown[] }
+      expect(data.messages?.length).toBeGreaterThan(0)
     },
     1000 * 600,
   )
@@ -62,13 +43,8 @@ describe("CommandRunner", () => {
     async () => {
       const result = await runner.start(test_id, { prompt: test_prompt })
       expect(result).toBeString()
-
-      const events = eventParser(result)
-      expect(events.length).toBeGreaterThan(0)
-
-      const textEvent = events.find((e) => e.type === "text")
-      expect(textEvent).toBeDefined()
-      console.log(textEvent!.part!.text)
+      expect(result).not.toContain("invalid response format")
+      console.log(result)
     },
     1000 * 600,
   )

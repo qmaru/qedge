@@ -1,3 +1,4 @@
+import { baseEnv } from "@/config"
 import { env } from "@/mqtt/config"
 import { CommandBackend } from "@/mqtt/utils"
 import { Opencode } from "@/shared/opencode"
@@ -55,14 +56,30 @@ interface EventResponse {
   }
 }
 
-interface CommandEventResponse {
-  type?: string
-  part?: {
-    type?: string
-    text?: string
-    tokens?: ParsedUsage["tokens"]
+interface CommandExport {
+  info?: {
     cost?: number
+    tokens?: {
+      input?: number
+      output?: number
+      reasoning?: number
+      cache?: {
+        read?: number
+        write?: number
+      }
+    }
   }
+  messages?: Array<{
+    type?: string
+    model?: {
+      id?: string
+      providerID?: string
+    }
+    content?: Array<{
+      type?: string
+      text?: string
+    }>
+  }>
 }
 
 const formatTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
@@ -85,64 +102,50 @@ const formatResult = (event: ParsedEvent) =>
     .join("\n\n")
 
 const parseCommandResult = (raw: string): ParsedEvent => {
-  const events = raw
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as CommandEventResponse)
+  let data: CommandExport
+  try {
+    data = JSON.parse(raw) as CommandExport
+  } catch {
+    return { text: raw.trim() || "invalid response format" }
+  }
 
-  const text = events
-    .flatMap((event) => (event.type === "text" && event.part?.text ? [event.part.text] : []))
+  const assistant = data.messages?.filter((message) => message.type === "assistant").at(-1)
+  const text = (assistant?.content ?? [])
+    .flatMap((part) => (part.type === "text" && part.text ? [part.text] : []))
     .join("\n")
 
-  const usage = events
-    .filter((event) => event.type === "step_finish" && event.part?.tokens)
-    .reduce<ParsedUsage>(
-      (total, event) => {
-        const tokens = event.part!.tokens!
-
-        total.cost += event.part?.cost || 0
-        total.tokens.total += tokens.total
-        total.tokens.input += tokens.input
-        total.tokens.output += tokens.output
-        total.tokens.reasoning += tokens.reasoning
-        total.tokens.cache.read += tokens.cache.read
-        total.tokens.cache.write += tokens.cache.write
-
-        return total
+  const tokens = data.info?.tokens
+  const usage: ParsedUsage | undefined = tokens && {
+    cost: data.info?.cost ?? 0,
+    tokens: {
+      total: (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0),
+      input: tokens.input ?? 0,
+      output: tokens.output ?? 0,
+      reasoning: tokens.reasoning ?? 0,
+      cache: {
+        read: tokens.cache?.read ?? 0,
+        write: tokens.cache?.write ?? 0,
       },
-      {
-        cost: 0,
-        tokens: {
-          total: 0,
-          input: 0,
-          output: 0,
-          reasoning: 0,
-          cache: {
-            read: 0,
-            write: 0,
-          },
-        },
-      },
-    )
+    },
+  }
 
   return {
     text: text || "invalid response format",
-    usage: usage.tokens.total > 0 ? usage : undefined,
+    modelID: assistant?.model?.id,
+    providerID: assistant?.model?.providerID,
+    usage,
   }
 }
 
-export interface AgentMediaInput {
-  image?: string
-  audio?: string
-  video?: string
-  file?: string
+export interface AgentFileInput {
+  // base64 data URL, e.g. data:image/png;base64,...
+  data_url?: string
 }
 
 export interface AgentInput {
   prompt: string
   model?: string
-  agent?: string
-  media?: AgentMediaInput
+  file?: AgentFileInput
 }
 
 export interface AgentRunner {
@@ -162,60 +165,61 @@ export class CommandRunner implements AgentRunner {
     return trimmed ? trimmed.split(/\s+/) : []
   }
 
-  private async saveMedia(requestId: string, media?: AgentMediaInput): Promise<string | undefined> {
-    const url = media?.image || media?.audio || media?.video || media?.file
-    if (!url) return undefined
+  private async saveFile(requestId: string, file?: string): Promise<string | undefined> {
+    if (!file) return undefined
 
-    const match = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url)
-    if (!match) throw new Error("Invalid media data URL")
+    const match = /^data:([^,]*?)(;base64)?,(.*)$/s.exec(file)
+    if (!match) throw new Error("Invalid file data URL")
 
     const [, mime, encoding, data] = match
-    const extension = mime?.split("/")[1]?.replace(/[^a-z0-9]+/gi, "") || "bin"
+    const extension = mime?.split(/[/;]/)[1]?.replace(/[^a-z0-9]+/gi, "") || "bin"
     const safeRequestId = requestId.replace(/[^a-z0-9_.-]+/gi, "_")
     const outputDir = env.agentOutput.replace(/[\\/]+$/, "")
-    const filePath = `${outputDir}/${taskId(safeRequestId)}.${extension}`
+    const outputPath = `${outputDir}/${taskId(safeRequestId)}.${extension}`
 
     const content = encoding
       ? Uint8Array.from(atob(data ?? ""), (character) => character.charCodeAt(0))
       : decodeURIComponent(data ?? "")
-    await Bun.write(filePath, content)
+    await Bun.write(outputPath, content)
 
-    return filePath
+    return outputPath
   }
 
   async start(requestId: string, input: AgentInput): Promise<string> {
-    const { prompt, model, agent, media } = input
+    const { prompt, model, file } = input
 
     if (!requestId || !prompt.trim()) {
-      debugLog("Start invalid request", { requestId, prompt, model, agent })
+      debugLog("Start invalid request", { requestId, prompt, model })
       return "invalid request"
     }
 
-    if (!env.agentOutput && (media?.image || media?.audio || media?.video || media?.file)) {
-      return "media input is not supported in CommandRunner"
+    if (!env.agentOutput && file?.data_url) {
+      return "file input is not supported in CommandRunner"
     }
 
-    const mediaPath = await this.saveMedia(requestId, media)
+    const filePath = await this.saveFile(requestId, file?.data_url)
 
     debugLog("Running", {
       requestId,
       prompt,
       model,
-      agent,
-      mediaPath,
+      filePath,
       startCmd: env.agentStartCmd,
       startArgs: this.startArgs,
     })
 
     try {
-      const res = await this.backend.run(env.agentStartCmd, [
-        ...this.startArgs,
-        taskId(requestId),
-        prompt,
-        model ? `model=${model}` : "",
-        agent ? `agent=${agent}` : "",
-        mediaPath ? `image=${mediaPath}` : "",
-      ])
+      const res = await this.backend.run(
+        env.agentStartCmd,
+        [
+          ...this.startArgs,
+          taskId(requestId),
+          prompt,
+          model ? `model=${model}` : "",
+          filePath ? `file=output/${filePath.split(/[\\/]/).pop()}` : "",
+          baseEnv.debug ? "debug=true" : "",
+        ].filter(Boolean),
+      )
 
       if (this.cancelled.has(requestId)) {
         debugLog("drop cancelled start result", { requestId, res })
@@ -225,11 +229,11 @@ export class CommandRunner implements AgentRunner {
       return formatResult(parseCommandResult(res.toText()))
     } finally {
       this.cancelled.delete(requestId)
-      if (mediaPath) {
+      if (filePath) {
         try {
-          await Bun.file(mediaPath).unlink()
+          await Bun.file(filePath).unlink()
         } catch (error) {
-          debugLog("Failed to remove media file", { requestId, mediaPath, error })
+          debugLog("Failed to remove file", { requestId, filePath, error })
         }
       }
     }
@@ -311,22 +315,15 @@ export class APIRunner implements AgentRunner {
     }
   }
 
-  private getMediaInfo(media?: AgentMediaInput): { mime: string; url: string } | undefined {
-    const url = media?.image || media?.audio || media?.video || media?.file
-    if (!url) {
-      return undefined
+  private getFileUrl(file?: string): string | undefined {
+    if (file && !/^data:[^,]*,/.test(file)) {
+      throw new Error("Invalid file data URL")
     }
-
-    const match = /^data:([^;,]+)[;,]/.exec(url)
-    if (!match?.[1]) {
-      throw new Error("Invalid media data URL")
-    }
-
-    return { url, mime: match[1] }
+    return file
   }
 
   async start(requestId: string, input: AgentInput): Promise<string> {
-    const { prompt, model, media } = input
+    const { prompt, model, file } = input
 
     const tid = taskId(requestId)
     let sessionId: string | undefined
@@ -372,27 +369,14 @@ export class APIRunner implements AgentRunner {
       debugLog("Send a sync message", {
         requestId,
         prompt,
-        media:
-          media?.image?.slice(0, 30) ||
-          media?.audio?.slice(0, 30) ||
-          media?.video?.slice(0, 30) ||
-          media?.file?.slice(0, 30) ||
-          "",
+        file: file?.data_url?.slice(0, 30) || "",
       })
 
-      const file = this.getMediaInfo(media)
+      const fileUrl = this.getFileUrl(file?.data_url)
 
       const promptBody: PromptBody = {
         text: prompt,
-        ...(file
-          ? {
-              files: [
-                {
-                  uri: file.url,
-                },
-              ],
-            }
-          : {}),
+        ...(fileUrl ? { files: [{ uri: fileUrl }] } : {}),
       }
 
       const messageResp = await this.oc.sendMessage(sessionId, promptBody, {
