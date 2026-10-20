@@ -406,8 +406,9 @@ export class APIRunner implements AgentRunner {
       }
 
       if (!messageResp.ok) {
-        debugLog("Send message failed", { messageResp })
-        return `send message failed: ${messageResp.status} ${messageResp.statusText}`
+        const body = await messageResp.text()
+        debugLog("Send message failed", { messageResp, body })
+        return `send message failed: ${messageResp.status} ${messageResp.statusText} ${body}`
       }
 
       await messageResp.json()
