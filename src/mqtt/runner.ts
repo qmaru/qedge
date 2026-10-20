@@ -379,6 +379,7 @@ export class APIRunner implements AgentRunner {
     }
 
     if (!text) {
+      debugLog("Assistant message has no text", { resp })
       return { text: "invalid response format" }
     }
 
@@ -401,6 +402,7 @@ export class APIRunner implements AgentRunner {
     const { prompt, model, file } = input
 
     const tid = taskId(requestId)
+    const startedAt = Date.now()
     let sessionId: string | undefined
     let aborted = false
 
@@ -413,6 +415,7 @@ export class APIRunner implements AgentRunner {
       debugLog("Create a session", {
         requestId,
         model,
+        timeoutMs: this.timeout,
       })
 
       const promptModel = model ? this.oc.parseModel(model) : undefined
@@ -443,8 +446,10 @@ export class APIRunner implements AgentRunner {
 
       debugLog("Send a sync message", {
         requestId,
+        sessionId,
         prompt,
         file: file?.data_url?.slice(0, 30) || "",
+        elapsedMs: Date.now() - startedAt,
       })
 
       const fileUrl = this.getFileUrl(file?.data_url)
@@ -470,12 +475,30 @@ export class APIRunner implements AgentRunner {
         return `send message failed: ${messageResp.status} ${messageResp.statusText} ${body}`
       }
 
-      await messageResp.json()
-
-      const waitResp = await this.oc.waitSession(sessionId, {
-        signal: controller.signal,
-        timeout: this.timeout,
+      const messageData = await messageResp.json()
+      debugLog("Send message responded", {
+        requestId,
+        data: JSON.stringify(messageData).slice(0, 500),
+        elapsedMs: Date.now() - startedAt,
       })
+
+      const waitResp = await this.oc
+        .waitSession(sessionId, {
+          signal: controller.signal,
+          timeout: this.timeout,
+        })
+        .catch(async (error: Error) => {
+          // Bun drops silent connections after ~360s; retry once with the remaining budget
+          if (error.name !== "TimeoutError") throw error
+          debugLog("Wait session dropped, retrying", {
+            requestId,
+            elapsedMs: Date.now() - startedAt,
+          })
+          return this.oc.waitSession(sessionId!, {
+            signal: controller.signal,
+            timeout: this.timeout - (Date.now() - startedAt),
+          })
+        })
 
       if (this.cancelled.has(tid)) {
         aborted = true
@@ -486,6 +509,12 @@ export class APIRunner implements AgentRunner {
         debugLog("Wait session failed", { waitResp })
         return `wait session failed: ${waitResp.status} ${waitResp.statusText}`
       }
+
+      debugLog("Wait session finished", {
+        requestId,
+        status: waitResp.status,
+        elapsedMs: Date.now() - startedAt,
+      })
 
       const messagesResp = await this.oc.getMessages(sessionId, {
         signal: controller.signal,
@@ -514,9 +543,15 @@ export class APIRunner implements AgentRunner {
         }
       }
 
-      const assistantMessage = [...messagesData.data]
-        .reverse()
-        .find((message) => message.type === "assistant")
+      const assistantMessage = messagesData.data.find((message) => message.type === "assistant")
+
+      debugLog("Messages fetched", {
+        requestId,
+        count: messagesData.data.length,
+        types: messagesData.data.map((message) => message.type),
+        cursor: messagesData.cursor,
+        elapsedMs: Date.now() - startedAt,
+      })
 
       if (!assistantMessage) {
         debugLog("Assistant message not found", {
@@ -530,6 +565,7 @@ export class APIRunner implements AgentRunner {
       debugLog("Send message succeeded", {
         requestId,
         messageId: assistantMessage.id,
+        elapsedMs: Date.now() - startedAt,
       })
 
       const { text, modelID, providerID, usage } = this.eventParser(assistantMessage)
@@ -544,13 +580,21 @@ export class APIRunner implements AgentRunner {
       const err = error as Error
 
       if (this.cancelled.has(tid) || err.name === "AbortError") {
+        debugLog("Request aborted", {
+          requestId,
+          name: err.name,
+          cancelled: this.cancelled.has(tid),
+          elapsedMs: Date.now() - startedAt,
+        })
         aborted = true
         return "[cancelled]"
       }
 
       debugLog("Error occurred", {
         requestId,
-        error,
+        name: err.name,
+        message: err.message,
+        elapsedMs: Date.now() - startedAt,
       })
 
       return `error: ${err.message}`
