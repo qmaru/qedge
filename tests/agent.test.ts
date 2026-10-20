@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
 
 import { env } from "@/mqtt/config"
-import { CommandRunner, APIRunner } from "@/mqtt/runner"
+import { CommandRunner, APIRunner, parseCommandResult } from "@/mqtt/runner"
 import { CommandBackend } from "@/mqtt/utils"
 
 describe("CommandBackend", () => {
@@ -23,8 +23,9 @@ describe("CommandBackend", () => {
       expect(result.stderr).toBeString()
       expect(result.code).toBeNumber()
 
-      const data = JSON.parse(result.toText()) as { messages?: unknown[] }
-      expect(data.messages?.length).toBeGreaterThan(0)
+      const final = parseCommandResult(result.toText())
+      expect(final.text).not.toBe("invalid response format")
+      console.log(final.text)
     },
     1000 * 600,
   )

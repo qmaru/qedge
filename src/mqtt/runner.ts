@@ -101,7 +101,25 @@ const formatResult = (event: ParsedEvent) =>
     .filter(Boolean)
     .join("\n\n")
 
-const parseCommandResult = (raw: string): ParsedEvent => {
+const makeUsage = (
+  cost: number,
+  input: number,
+  output: number,
+  reasoning: number,
+  cacheRead: number,
+  cacheWrite: number,
+): ParsedUsage => ({
+  cost,
+  tokens: {
+    total: input + output + reasoning,
+    input,
+    output,
+    reasoning,
+    cache: { read: cacheRead, write: cacheWrite },
+  },
+})
+
+const parseOpencodeResult = (raw: string): ParsedEvent => {
   let data: CommandExport
   try {
     data = JSON.parse(raw) as CommandExport
@@ -115,19 +133,16 @@ const parseCommandResult = (raw: string): ParsedEvent => {
     .join("\n")
 
   const tokens = data.info?.tokens
-  const usage: ParsedUsage | undefined = tokens && {
-    cost: data.info?.cost ?? 0,
-    tokens: {
-      total: (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0),
-      input: tokens.input ?? 0,
-      output: tokens.output ?? 0,
-      reasoning: tokens.reasoning ?? 0,
-      cache: {
-        read: tokens.cache?.read ?? 0,
-        write: tokens.cache?.write ?? 0,
-      },
-    },
-  }
+  const usage =
+    tokens &&
+    makeUsage(
+      data.info?.cost ?? 0,
+      tokens.input ?? 0,
+      tokens.output ?? 0,
+      tokens.reasoning ?? 0,
+      tokens.cache?.read ?? 0,
+      tokens.cache?.write ?? 0,
+    )
 
   return {
     text: text || "invalid response format",
@@ -136,6 +151,64 @@ const parseCommandResult = (raw: string): ParsedEvent => {
     usage,
   }
 }
+
+interface PiMessage {
+  role?: string
+  content?: Array<{
+    type?: string
+    text?: string
+  }>
+  provider?: string
+  model?: string
+  usage?: {
+    input?: number
+    output?: number
+    reasoning?: number
+    cacheRead?: number
+    cacheWrite?: number
+    cost?: {
+      total?: number
+    }
+  }
+}
+
+// pi --mode json prints JSONL events; the final messages are in agent_end
+const parsePiResult = (raw: string): ParsedEvent => {
+  const events = raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { type?: string; messages?: PiMessage[] })
+
+  const message = events
+    .filter((event) => event.type === "agent_end")
+    .at(-1)
+    ?.messages?.filter((item) => item.role === "assistant")
+    .at(-1)
+
+  const text = (message?.content ?? [])
+    .flatMap((part) => (part.type === "text" && part.text ? [part.text] : []))
+    .join("\n")
+
+  const usage = message?.usage
+  return {
+    text: text || "invalid response format",
+    modelID: message?.model,
+    providerID: message?.provider,
+    usage:
+      usage &&
+      makeUsage(
+        usage.cost?.total ?? 0,
+        usage.input ?? 0,
+        usage.output ?? 0,
+        usage.reasoning ?? 0,
+        usage.cacheRead ?? 0,
+        usage.cacheWrite ?? 0,
+      ),
+  }
+}
+
+export const parseCommandResult = (raw: string): ParsedEvent =>
+  env.agentEngine === "pi" ? parsePiResult(raw) : parseOpencodeResult(raw)
 
 export interface AgentFileInput {
   // base64 data URL, e.g. data:image/png;base64,...
@@ -216,7 +289,9 @@ export class CommandRunner implements AgentRunner {
           taskId(requestId),
           prompt,
           model ? `model=${model}` : "",
-          filePath ? `file=output/${filePath.split(/[\\/]/).pop()}` : "",
+          filePath
+            ? `${env.agentEngine === "pi" ? "image" : "file"}=/workspace/output/${filePath.split(/[\\/]/).pop()}`
+            : "",
           baseEnv.debug ? "debug=true" : "",
         ].filter(Boolean),
       )
